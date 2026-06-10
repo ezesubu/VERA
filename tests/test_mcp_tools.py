@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from vera.tools.mcp_server import tail_log
+from vera.tools.mcp_server import (
+    BRIDGE_DOWN_MSG,
+    check_status,
+    run_script,
+    send_vera_command,
+    tail_log,
+)
 
 
 def test_tail_log_returns_last_n_lines(tmp_path):
@@ -27,3 +33,61 @@ def test_tail_log_zero_or_negative_lines_returns_empty(tmp_path):
     log.write_text("a\nb\nc\n", encoding="utf-8")
     assert tail_log(log, lines=0) == ""
     assert tail_log(log, lines=-5) == ""
+
+
+def test_run_script_returns_output(fake_bridge):
+    fake_bridge["handler"] = lambda p: {"success": True, "output": "Hola desde UE"}
+    result = run_script("print('Hola desde UE')", port=fake_bridge["port"])
+    assert result["success"] is True
+    assert result["output"] == "Hola desde UE"
+
+
+def test_run_script_returns_ue_traceback_as_result(fake_bridge):
+    fake_bridge["handler"] = lambda p: {
+        "success": False,
+        "output": "",
+        "error": "Traceback...\nNameError: name 'foo' is not defined",
+    }
+    result = run_script("foo()", port=fake_bridge["port"])
+    assert result["success"] is False
+    assert "NameError" in result["error"]
+
+
+def test_run_script_editor_down_gives_actionable_message():
+    result = run_script("print(1)", port=1)
+    assert result["success"] is False
+    assert result["error"] == BRIDGE_DOWN_MSG
+
+
+def test_run_script_timeout_says_still_running(fake_bridge):
+    import time
+
+    def slow(payload):
+        time.sleep(1.0)
+        return {"success": True, "output": ""}
+
+    fake_bridge["handler"] = slow
+    result = run_script("largo()", port=fake_bridge["port"], timeout=0.3)
+    assert result["success"] is None
+    assert "sigue ejecutando" in result["output"]
+
+
+def test_check_status_both_down():
+    status = check_status(bridge_port=1, backend_port=1)
+    assert status["bridge"]["online"] is False
+    assert status["backend"]["online"] is False
+
+
+def test_check_status_bridge_up(fake_bridge):
+    fake_bridge["handler"] = lambda p: {"success": True, "output": "5.7.0"}
+    status = check_status(bridge_port=fake_bridge["port"], backend_port=1)
+    assert status["bridge"]["online"] is True
+    assert status["bridge"]["engine_version"] == "5.7.0"
+
+
+def test_send_vera_command(fake_bridge):
+    # El backend responde {"status", "message"} — mismo framing
+    fake_bridge["handler"] = lambda p: {"status": "success", "message": f"eco: {p['command']}"}
+    result = send_vera_command("hello world", port=fake_bridge["port"])
+    assert result["status"] == "success"
+    assert "hello world" in result["message"]
