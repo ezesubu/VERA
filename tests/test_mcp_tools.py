@@ -98,3 +98,46 @@ def test_check_status_survives_garbage_bridge(garbage_bridge):
     status = check_status(bridge_port=garbage_bridge, backend_port=1)
     assert status["bridge"]["online"] is False
     assert status["backend"]["online"] is False
+
+
+import threading
+import time
+
+from vera.tools.mcp_server import request_screenshot
+
+
+def test_request_screenshot_returns_path_when_file_appears(fake_bridge, tmp_path):
+    captured = {}
+
+    def handler(payload):
+        captured["script"] = payload["script"]
+        # Simula la escritura asíncrona de UE: el PNG aparece 0.3s después
+        name = payload["script"].split('"')[-2]  # último string literal = nombre
+
+        def write_later():
+            time.sleep(0.3)
+            (tmp_path / name).write_bytes(b"\x89PNG fake")
+
+        threading.Thread(target=write_later, daemon=True).start()
+        return {"success": True, "output": ""}
+
+    fake_bridge["handler"] = handler
+    path = request_screenshot(
+        port=fake_bridge["port"], screenshots_dir=tmp_path, timeout=5.0
+    )
+    assert path is not None
+    assert path.exists()
+    assert "take_high_res_screenshot" in captured["script"]
+
+
+def test_request_screenshot_returns_none_if_file_never_appears(fake_bridge, tmp_path):
+    fake_bridge["handler"] = lambda p: {"success": True, "output": ""}
+    path = request_screenshot(
+        port=fake_bridge["port"], screenshots_dir=tmp_path, timeout=0.5
+    )
+    assert path is None
+
+
+def test_request_screenshot_bridge_down_returns_none(tmp_path):
+    path = request_screenshot(port=1, screenshots_dir=tmp_path, timeout=0.5)
+    assert path is None

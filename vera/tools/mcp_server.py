@@ -3,6 +3,8 @@
 Las funciones de este módulo son puras/testeables; el wiring FastMCP vive en main().
 """
 import os
+import time
+import uuid
 from pathlib import Path
 
 from vera.tools.ue_conn import UEConnectionError, UETimeoutError, send_json
@@ -11,6 +13,7 @@ from vera.tools.ue_conn import UEConnectionError, UETimeoutError, send_json
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 UE_PROJECT_DIR = Path(os.environ.get("VERA_UE_PROJECT_DIR", _REPO_ROOT / "UE57"))
 LOG_PATH = UE_PROJECT_DIR / "Saved" / "Logs" / "UE57.log"
+SCREENSHOTS_DIR = UE_PROJECT_DIR / "Saved" / "Screenshots" / "WindowsEditor"
 
 BRIDGE_PORT = int(os.environ.get("VERA_BRIDGE_PORT", "9878"))
 BACKEND_PORT = int(os.environ.get("VERA_BACKEND_PORT", "9880"))
@@ -94,3 +97,33 @@ def send_vera_command(text, timeout=300.0, port=None):
             "status": "error",
             "message": f"El backend no respondió en {timeout:.0f}s. Mirá sus logs.",
         }
+
+
+_SCREENSHOT_SCRIPT = (
+    "import unreal\n"
+    'unreal.AutomationLibrary.take_high_res_screenshot(1280, 720, "{name}")\n'
+    "print('screenshot solicitado: {name}')"
+)
+
+
+def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
+    """Pide una captura del viewport y espera a que el PNG aparezca en disco.
+
+    Devuelve el Path del PNG, o None si falló (bridge caído o el archivo
+    nunca apareció). take_high_res_screenshot es asíncrona: UE escribe el
+    archivo unos frames después de ejecutar el script.
+    """
+    target_dir = Path(screenshots_dir) if screenshots_dir else SCREENSHOTS_DIR
+    name = f"vera_{uuid.uuid4().hex[:8]}.png"
+
+    result = run_script(_SCREENSHOT_SCRIPT.format(name=name), timeout=15.0, port=port)
+    if result.get("success") is False:
+        return None
+
+    target = target_dir / name
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if target.exists() and target.stat().st_size > 0:
+            return target
+        time.sleep(0.25)
+    return None
