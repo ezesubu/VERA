@@ -28,15 +28,22 @@ def fake_bridge():
             except (socket.timeout, OSError):
                 continue
             with conn:
-                data = b""
-                while not data.endswith(b"\n"):
-                    chunk = conn.recv(4096)
-                    if not chunk:
-                        break
-                    data += chunk
-                payload = json.loads(data.decode("utf-8"))
-                resp = state["handler"](payload)
-                conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+                try:
+                    data = b""
+                    while not data.endswith(b"\n"):
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            break
+                        data += chunk
+                    payload = json.loads(data.decode("utf-8"))
+                    resp = state["handler"](payload)
+                    conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+                except Exception as e:  # un handler roto no debe matar el thread
+                    try:
+                        err = json.dumps({"success": False, "error": f"fake_bridge handler: {e}"})
+                        conn.sendall((err + "\n").encode("utf-8"))
+                    except OSError:
+                        pass
 
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
