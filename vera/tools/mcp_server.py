@@ -18,4 +18,6 @@ def tail_log(path, lines=100):
     if not path.exists():
         return f"No existe el log en {path}. ¿El editor llegó a abrir alguna vez?"
     text = path.read_text(encoding="utf-8", errors="replace")
+    if lines <= 0:
+        return ""
     return "\n".join(text.splitlines()[-lines:])

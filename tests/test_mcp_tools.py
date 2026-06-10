@@ -20,3 +20,10 @@ def test_tail_log_tolerates_bad_encoding(tmp_path):
     log.write_bytes(b"ok\n\xff\xfe rotas\nfin\n")
     out = tail_log(log, lines=10)
     assert "fin" in out
+
+
+def test_tail_log_zero_or_negative_lines_returns_empty(tmp_path):
+    log = tmp_path / "UE57.log"
+    log.write_text("a\nb\nc\n", encoding="utf-8")
+    assert tail_log(log, lines=0) == ""
+    assert tail_log(log, lines=-5) == ""
