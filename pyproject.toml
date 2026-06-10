@@ -23,7 +23,7 @@ dependencies = [
     "Pillow>=10.0.0",
     "opencv-python>=4.8.0",
     "pytesseract>=0.3.10",
-    "google-generativeai>=0.8.0",
+    "google-genai>=0.2.0",
     "sentence-transformers>=3.0.0",
     "numpy>=1.24.0",
     "faiss-cpu>=1.7.4",
@@ -31,6 +31,7 @@ dependencies = [
     "rich>=13.0.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
+    "mcp>=1.2.0",
 ]
 
 [project.optional-dependencies]

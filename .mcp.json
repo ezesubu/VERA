@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vera-ue": {
+      "command": "python",
+      "args": ["-m", "vera.tools.mcp_server"],
+      "env": {
+        "VERA_UE_PROJECT_DIR": "E:/PCW/VERA/UE57"
+      }
+    }
+  }
+}

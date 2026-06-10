@@ -133,3 +133,53 @@ def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
             last_size = size
         time.sleep(0.25)
     return None
+
+
+def main():
+    # Import adentro de main(): los tests importan este módulo sin necesitar el SDK
+    from mcp.server.fastmcp import FastMCP, Image
+
+    mcp = FastMCP("vera-ue")
+
+    @mcp.tool()
+    def ue_exec(script: str, timeout: float = 60.0) -> str:
+        """Ejecuta Python en el main thread del editor de Unreal (módulo `unreal`
+        disponible). Devuelve stdout capturado, o el traceback si el script falló."""
+        result = run_script(script, timeout=timeout)
+        if result.get("success") is False:
+            return f"ERROR:\n{result.get('error', result.get('output', 'sin detalle'))}"
+        return result.get("output", "") or "(sin output)"
+
+    @mcp.tool()
+    def ue_screenshot() -> Image:
+        """Captura el viewport activo del editor y devuelve el PNG."""
+        path = request_screenshot()
+        if path is None:
+            raise RuntimeError(
+                "No se pudo capturar el viewport. " + BRIDGE_DOWN_MSG
+                + " Si el bridge está OK, mirá ue_log(100)."
+            )
+        return Image(data=path.read_bytes(), format="png")
+
+    @mcp.tool()
+    def ue_log(lines: int = 100) -> str:
+        """Últimas N líneas del Output Log del editor (lee el archivo directo:
+        funciona aunque el editor esté colgado)."""
+        return tail_log(LOG_PATH, lines=lines)
+
+    @mcp.tool()
+    def ue_status() -> dict:
+        """Estado del bridge (9878) y del backend VERA (9880), con versión del engine."""
+        return check_status()
+
+    @mcp.tool()
+    def vera_command(text: str) -> str:
+        """Comando de alto nivel al pipeline de agentes VERA (ManagerAgent → recetas)."""
+        result = send_vera_command(text)
+        return result.get("message", str(result))
+
+    mcp.run()
+
+
+if __name__ == "__main__":
+    main()
