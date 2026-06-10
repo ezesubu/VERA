@@ -71,3 +71,32 @@ def test_exec_error_returns_traceback(running_bridge):
     result = _send(running_bridge, {"script": "variable_inexistente"})
     assert result["success"] is False
     assert "NameError" in result["error"]
+
+
+def test_tick_stall_returns_timeout_and_no_leaks(bridge_module, monkeypatch):
+    # Bridge SIN bomba de tick: nadie drena la cola → timeout server-side
+    monkeypatch.setattr(bridge_module, "MAIN_THREAD_TIMEOUT", 0.5)
+    port = bridge_module.start(port=0)
+    result = _send(port, {"script": "print('nunca')"})
+    assert result["success"] is None
+    assert "no procesó" in result["error"]
+    # sin fugas: los dicts quedan limpios tras el timeout
+    time.sleep(0.1)
+    assert bridge_module._results == {}
+    assert bridge_module._result_events == {}
+
+
+def test_two_concurrent_clients_get_own_results(running_bridge):
+    results = {}
+
+    def call(tag):
+        results[tag] = _send(running_bridge, {"script": "print('%s')" % tag})
+
+    t1 = threading.Thread(target=call, args=("uno",))
+    t2 = threading.Thread(target=call, args=("dos",))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+    assert results["uno"]["output"] == "uno"
+    assert results["dos"]["output"] == "dos"

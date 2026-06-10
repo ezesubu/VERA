@@ -146,7 +146,8 @@ def main():
         """Ejecuta Python en el main thread del editor de Unreal (módulo `unreal`
         disponible). Devuelve stdout capturado, o el traceback si el script falló.
         Si excede `timeout` (segundos) devuelve TIMEOUT: el script SIGUE ejecutando
-        en el editor (no se aborta); verificá el resultado con ue_log o ue_status."""
+        en el editor (no se aborta); verificá el resultado con ue_log o ue_status.
+        Cada llamada usa un namespace nuevo: el estado (variables, imports) NO persiste entre llamadas — incluí todo lo necesario en un solo script."""
         result = run_script(script, timeout=timeout)
         if result.get("success") is False:
             return f"ERROR:\n{result.get('error', result.get('output', 'sin detalle'))}"

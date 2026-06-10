@@ -20,6 +20,11 @@ import unreal
 HOST = "127.0.0.1"
 PORT = 9878
 
+# El timeout server-side debe ser MAYOR que el del cliente (ue_conn default 60s):
+# en scripts lentos normales el cliente corta primero; esto solo atrapa stalls
+# reales del tick (diálogos modales, cargas largas).
+MAIN_THREAD_TIMEOUT = 120.0
+
 # Cola de (task_id, script) hacia el main thread; resultados por task_id
 _task_queue = queue.Queue()
 _results = {}
@@ -33,6 +38,9 @@ def _execute_on_main_thread(task_id, script):
 
     original_print = builtins.print
 
+    # Parchear builtins.print es seguro SOLO porque el tick drena UN task por
+    # vez y corre sincrónico en el main thread: nunca hay dos ejecuciones
+    # solapadas que pisen original_print.
     def capture_print(*args, **kwargs):
         line = " ".join(str(a) for a in args)
         output_lines.append(line)
@@ -42,16 +50,22 @@ def _execute_on_main_thread(task_id, script):
         builtins.print = capture_print
         try:
             exec(script, {"unreal": unreal})  # noqa: S102
-            _results[task_id] = {"success": True, "output": "\n".join(output_lines)}
+            result = {"success": True, "output": "\n".join(output_lines)}
         except Exception:
-            _results[task_id] = {
+            result = {
                 "success": False,
                 "output": "\n".join(output_lines),
                 "error": traceback.format_exc(),
             }
     finally:
         builtins.print = original_print
-        _result_events[task_id].set()
+
+    event = _result_events.get(task_id)
+    if event is not None:
+        # Solo publicar si alguien sigue esperando: un task que terminó después
+        # del timeout del handler no debe dejar resultados huérfanos.
+        _results[task_id] = result
+        event.set()
 
 
 def slate_tick_callback(delta_time):
@@ -64,6 +78,7 @@ def slate_tick_callback(delta_time):
 
 
 def _handle_client(conn, addr):
+    task_id = None
     try:
         data = b""
         while not data.endswith(b"\n"):
@@ -80,15 +95,25 @@ def _handle_client(conn, addr):
         _result_events[task_id] = event
         _task_queue.put((task_id, script))
 
-        # Espera al main thread (el cliente maneja su propio timeout)
-        event.wait()
-        result = _results.pop(task_id)
-        _result_events.pop(task_id, None)
+        if event.wait(timeout=MAIN_THREAD_TIMEOUT):
+            result = _results.pop(task_id, None)
+        else:
+            result = {
+                "success": None,
+                "output": "",
+                "error": "El editor no procesó el script en %.0fs "
+                         "(¿diálogo modal abierto o carga larga?)." % MAIN_THREAD_TIMEOUT,
+            }
+        if result is None:
+            result = {"success": False, "output": "", "error": "resultado perdido"}
 
         conn.sendall((json.dumps(result) + "\n").encode("utf-8"))
     except Exception as e:
         unreal.log_error("VERA Bridge error: " + str(e))
     finally:
+        if task_id is not None:
+            _results.pop(task_id, None)
+            _result_events.pop(task_id, None)
         conn.close()
 
 
