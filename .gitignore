@@ -15,3 +15,13 @@ registry/ue5_coords.json
 # OS
 .DS_Store
 Thumbs.db
+
+# --- Unreal Engine (proyecto UE57) ---
+UE57/Saved/
+UE57/Intermediate/
+UE57/Binaries/
+UE57/DerivedDataCache/
+UE57/.vs/
+UE57/*.sln
+# Nota: UE57/Content NO se ignora (decisión pendiente sobre assets binarios);
+# Content/Python/ debe permanecer versionado siempre.

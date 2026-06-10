@@ -14,6 +14,13 @@ en `.mcp.json`). Herramientas: `ue_exec`, `ue_screenshot`, `ue_log`, `ue_status`
 2. `pip install -e .[dev]` en `E:\PCW\VERA` (instala `mcp`).
 3. Opcional para `vera_command`: backend corriendo — `python -m vera.core.vera_server`.
 
+## Seguridad
+
+El bridge ejecuta Python ARBITRARIO sin autenticación en `127.0.0.1:9878`:
+cualquier proceso local puede controlar el editor mientras esté abierto. Es un
+diseño aceptado para herramienta de desarrollo local — no usar en máquinas
+compartidas/multiusuario. Nunca cambiar el bind a `0.0.0.0`.
+
 ## Nota sobre el intérprete
 
 `.mcp.json` usa la ruta ABSOLUTA de Python 3.14
@@ -29,7 +36,9 @@ Desde una sesión de Claude Code en este repo (reiniciada para que cargue `.mcp.
 1. `ue_status` → bridge online, versión del engine visible.
 2. `ue_exec("import unreal\nprint(unreal.SystemLibrary.get_engine_version())")`
    → imprime la versión.
-3. `ue_screenshot()` → devuelve un PNG del viewport.
+3. `ue_screenshot()` → devuelve un PNG del viewport. ⚠️ Requiere que el editor
+   tenga foco o esté renderizando (UE throttlea el render en background y la
+   captura asíncrona no se materializa — limitación conocida, fix pendiente).
 4. `ue_log(50)` → últimas líneas del Output Log.
 
 ## Test de aceptación — "loop con ojos"
