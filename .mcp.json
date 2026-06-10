@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "vera-ue": {
-      "command": "python",
+      "command": "C:/Users/ezesu/AppData/Local/Programs/Python/Python314/python.exe",
       "args": ["-m", "vera.tools.mcp_server"],
       "env": {
         "VERA_UE_PROJECT_DIR": "E:/PCW/VERA/UE57"

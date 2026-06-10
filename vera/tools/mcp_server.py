@@ -144,10 +144,14 @@ def main():
     @mcp.tool()
     def ue_exec(script: str, timeout: float = 60.0) -> str:
         """Ejecuta Python en el main thread del editor de Unreal (módulo `unreal`
-        disponible). Devuelve stdout capturado, o el traceback si el script falló."""
+        disponible). Devuelve stdout capturado, o el traceback si el script falló.
+        Si excede `timeout` (segundos) devuelve TIMEOUT: el script SIGUE ejecutando
+        en el editor (no se aborta); verificá el resultado con ue_log o ue_status."""
         result = run_script(script, timeout=timeout)
         if result.get("success") is False:
             return f"ERROR:\n{result.get('error', result.get('output', 'sin detalle'))}"
+        if result.get("success") is None:
+            return f"TIMEOUT:\n{result.get('output', '')}"
         return result.get("output", "") or "(sin output)"
 
     @mcp.tool()
@@ -156,15 +160,14 @@ def main():
         path = request_screenshot()
         if path is None:
             raise RuntimeError(
-                "No se pudo capturar el viewport. " + BRIDGE_DOWN_MSG
+                "No se pudo capturar el viewport (bridge caído o la captura no apareció en disco a tiempo). " + BRIDGE_DOWN_MSG
                 + " Si el bridge está OK, mirá ue_log(100)."
             )
         return Image(data=path.read_bytes(), format="png")
 
     @mcp.tool()
     def ue_log(lines: int = 100) -> str:
-        """Últimas N líneas del Output Log del editor (lee el archivo directo:
-        funciona aunque el editor esté colgado)."""
+        """Últimas N líneas (default 100) del Output Log del editor — lee Saved/Logs/UE57.log directo del disco: funciona aunque el editor esté colgado o crasheado."""
         return tail_log(LOG_PATH, lines=lines)
 
     @mcp.tool()
@@ -174,7 +177,7 @@ def main():
 
     @mcp.tool()
     def vera_command(text: str) -> str:
-        """Comando de alto nivel al pipeline de agentes VERA (ManagerAgent → recetas)."""
+        """Comando de alto nivel al pipeline de agentes VERA (ManagerAgent → recetas). Puede tardar varios minutos: el backend llama a un LLM (timeout interno 300s)."""
         result = send_vera_command(text)
         return result.get("message", str(result))
 
