@@ -1,0 +1,19 @@
+llm:
+  provider: gemini
+  model: gemini-2.0-flash          # Cheapest model for planning
+  vision_model: gemini-2.0-flash   # Used only as last resort
+
+perception:
+  prefer_local_ocr: true           # Always try OCR before LLM
+  max_screenshot_width: 800        # Downscale before sending to Vision
+  screenshot_quality: 70           # JPEG quality (lower = fewer tokens)
+  roi_detection: true              # Crop to relevant region only
+
+cache:
+  coord_registry: true             # Cache UI element positions
+  action_cache: true               # Cache completed workflows
+  similarity_threshold: 0.82       # Cosine similarity for cache hits
+
+ue_bridge:
+  port: 9877                       # TCP port for UE Python bridge
+  timeout: 10                      # Seconds to wait for UE response

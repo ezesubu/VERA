@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# VERA
+.env
+registry/action_cache.json
+registry/ue5_coords.json
+
+# OS
+.DS_Store
+Thumbs.db
