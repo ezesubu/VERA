@@ -122,8 +122,14 @@ def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
 
     target = target_dir / name
     deadline = time.time() + timeout
+    last_size = -1
     while time.time() < deadline:
-        if target.exists() and target.stat().st_size > 0:
-            return target
+        if target.exists():
+            size = target.stat().st_size
+            # UE escribe directo al path final (sin temp+rename): exigir tamaño
+            # estable en dos polls consecutivos evita devolver un PNG a medias.
+            if size > 0 and size == last_size:
+                return target
+            last_size = size
         time.sleep(0.25)
     return None

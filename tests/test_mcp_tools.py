@@ -1,8 +1,11 @@
+import threading
+import time
 from pathlib import Path
 
 from vera.tools.mcp_server import (
     BRIDGE_DOWN_MSG,
     check_status,
+    request_screenshot,
     run_script,
     send_vera_command,
     tail_log,
@@ -60,8 +63,6 @@ def test_run_script_editor_down_gives_actionable_message():
 
 
 def test_run_script_timeout_says_still_running(fake_bridge):
-    import time
-
     def slow(payload):
         time.sleep(1.0)
         return {"success": True, "output": ""}
@@ -100,23 +101,21 @@ def test_check_status_survives_garbage_bridge(garbage_bridge):
     assert status["backend"]["online"] is False
 
 
-import threading
-import time
-
-from vera.tools.mcp_server import request_screenshot
-
-
 def test_request_screenshot_returns_path_when_file_appears(fake_bridge, tmp_path):
     captured = {}
 
     def handler(payload):
         captured["script"] = payload["script"]
-        # Simula la escritura asíncrona de UE: el PNG aparece 0.3s después
+        # Simula la escritura asíncrona de UE: el PNG aparece en dos chunks
         name = payload["script"].split('"')[-2]  # último string literal = nombre
 
         def write_later():
             time.sleep(0.3)
-            (tmp_path / name).write_bytes(b"\x89PNG fake")
+            f = tmp_path / name
+            f.write_bytes(b"\x89PNG ")          # primera mitad: tamaño aún creciendo
+            time.sleep(0.4)
+            with f.open("ab") as fh:
+                fh.write(b"fake resto")          # tamaño final
 
         threading.Thread(target=write_later, daemon=True).start()
         return {"success": True, "output": ""}
@@ -128,6 +127,7 @@ def test_request_screenshot_returns_path_when_file_appears(fake_bridge, tmp_path
     assert path is not None
     assert path.exists()
     assert "take_high_res_screenshot" in captured["script"]
+    assert path.read_bytes() == b"\x89PNG fake resto"
 
 
 def test_request_screenshot_returns_none_if_file_never_appears(fake_bridge, tmp_path):
