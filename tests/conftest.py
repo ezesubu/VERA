@@ -50,3 +50,35 @@ def fake_bridge():
     yield state
     stop.set()
     server.close()
+
+
+@pytest.fixture
+def garbage_bridge():
+    """Server TCP que responde algo que no es JSON (protocolo roto)."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+    port = server.getsockname()[1]
+    stop = threading.Event()
+
+    def serve():
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except socket.timeout:
+                continue
+            with conn:
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                conn.sendall(b"esto no es json\n")
+
+    threading.Thread(target=serve, daemon=True).start()
+    yield port
+    stop.set()
+    server.close()

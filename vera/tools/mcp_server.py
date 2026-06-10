@@ -60,7 +60,7 @@ def run_script(script, timeout=60.0, port=None):
 
 def check_status(bridge_port=None, backend_port=None):
     """Ping a bridge y backend. Para el bridge pide la versión del engine."""
-    status = {"bridge": {"online": False}, "backend": {"online": False}}
+    status = {"bridge": {"online": False, "engine_version": None}, "backend": {"online": False}}
 
     version_script = "import unreal\nprint(unreal.SystemLibrary.get_engine_version())"
     try:

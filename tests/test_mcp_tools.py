@@ -91,3 +91,10 @@ def test_send_vera_command(fake_bridge):
     result = send_vera_command("hello world", port=fake_bridge["port"])
     assert result["status"] == "success"
     assert "hello world" in result["message"]
+
+
+def test_check_status_survives_garbage_bridge(garbage_bridge):
+    # Un bridge que habla mal el protocolo no debe crashear el diagnóstico
+    status = check_status(bridge_port=garbage_bridge, backend_port=1)
+    assert status["bridge"]["online"] is False
+    assert status["backend"]["online"] is False

@@ -46,4 +46,7 @@ def send_json(port, payload, timeout=DEFAULT_TIMEOUT, host="127.0.0.1"):
 
     if not buf.strip():
         raise UEConnectionError("el servidor cerró la conexión sin responder")
-    return json.loads(buf.decode("utf-8").strip())
+    try:
+        return json.loads(buf.decode("utf-8").strip())
+    except ValueError as e:
+        raise UEConnectionError(f"respuesta malformada del servidor: {e}") from e
