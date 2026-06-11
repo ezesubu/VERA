@@ -201,3 +201,51 @@ def test_tool_result_largo_se_trunca():
     tr = client.messages.calls[1]["messages"][-1]["content"][0]
     assert len(tr["content"]) < 50_000
     assert "truncado" in tr["content"]
+
+
+def test_tool_result_exactamente_en_el_limite_no_se_trunca():
+    from vera.agent.loop import MAX_TOOL_RESULT_CHARS
+
+    class AtLimitTool(Tool):
+        name = "atlimit"
+        description = "a"
+        input_schema = {"type": "object", "properties": {}}
+        destructive = False
+
+        def execute(self, args, ctx):
+            return ToolResult("x" * MAX_TOOL_RESULT_CHARS)
+
+    reg = ToolRegistry()
+    reg.register(AtLimitTool())
+    client = FakeClient([
+        _Resp("tool_use", [_ToolUse("t1", "atlimit", {})]),
+        _Resp("end_turn", [_Text("ok")]),
+    ])
+    AgentLoop(reg, client).run("dale")
+    tr = client.messages.calls[1]["messages"][-1]["content"][0]
+    assert len(tr["content"]) == MAX_TOOL_RESULT_CHARS
+    assert "truncado" not in tr["content"]
+
+
+def test_tool_result_truncado_respeta_el_limite_estricto():
+    from vera.agent.loop import MAX_TOOL_RESULT_CHARS
+
+    class HugeTool(Tool):
+        name = "huge"
+        description = "h"
+        input_schema = {"type": "object", "properties": {}}
+        destructive = False
+
+        def execute(self, args, ctx):
+            return ToolResult("x" * 1_000_000)
+
+    reg = ToolRegistry()
+    reg.register(HugeTool())
+    client = FakeClient([
+        _Resp("tool_use", [_ToolUse("t1", "huge", {})]),
+        _Resp("end_turn", [_Text("ok")]),
+    ])
+    AgentLoop(reg, client).run("dale")
+    tr = client.messages.calls[1]["messages"][-1]["content"][0]
+    assert len(tr["content"]) <= MAX_TOOL_RESULT_CHARS
+    assert "truncado" in tr["content"]

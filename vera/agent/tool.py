@@ -17,7 +17,11 @@ class ToolResult:
 
 
 def image_block(data_b64: str, media_type: str = "image/png") -> dict:
-    """Content block de imagen (base64) para devolver en un ToolResult."""
+    """Content block de imagen (base64) para devolver en un ToolResult.
+
+    `media_type` aceptado por la API: "image/png", "image/jpeg",
+    "image/gif", "image/webp". Otro valor causa un 400.
+    """
     return {
         "type": "image",
         "source": {"type": "base64", "media_type": media_type, "data": data_b64},

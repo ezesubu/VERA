@@ -117,9 +117,9 @@ class AgentLoop:
             logger.exception("[AgentLoop] la tool %s lanzó excepción", tool.name)
             result = ToolResult(f"excepción en la tool: {e}", is_error=True)
         if isinstance(result.content, str) and len(result.content) > MAX_TOOL_RESULT_CHARS:
+            marca = f"\n[...resultado truncado: {len(result.content)} caracteres en total]"
             result = ToolResult(
-                result.content[:MAX_TOOL_RESULT_CHARS]
-                + f"\n[...resultado truncado: {len(result.content)} caracteres en total]",
+                result.content[: MAX_TOOL_RESULT_CHARS - len(marca)] + marca,
                 is_error=result.is_error,
             )
         if emit:
