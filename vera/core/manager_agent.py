@@ -95,7 +95,10 @@ class ManagerAgent:
             logger.info(f"[Manager] Cache HIT! Replaying recipe...")
             self._progress("Manager", "cache hit — replaying recipe")
             # For this MVP, if it's a code block, we just execute it via python_agent
-            return self.python_agent._execute_code(cached_solution)
+            if isinstance(cached_solution, str) and cached_solution.strip():
+                ok, _output = self.python_agent._execute_code(cached_solution)
+                return bool(ok)
+            logger.warning("[Manager] Cache hit con formato no ejecutable; lo ignoro.")
 
         # 2. Cache Miss - We must think and delegate.
         logger.info("[Manager] Cache MISS. Delegating task to Crew...")
@@ -156,12 +159,13 @@ class ManagerAgent:
             logger.info("[Manager] LLM Routed to GitAgent.")
             self._progress("Git", "version control")
             if "revert" in command.lower():
-                self.git_agent.revert_last_action()
+                result = self.git_agent.revert_last_action()
                 steps_taken.append({"action": "git_revert"})
+                success = not str(result).startswith("Error")
             else:
-                self.git_agent.auto_commit_fix(command)
+                result = self.git_agent.auto_commit_fix(command)
                 steps_taken.append({"action": "git_commit"})
-            success = True
+                success = bool(result) and not str(result).startswith("Error")
                 
         elif route == "CRITIC":
             logger.info("[Manager] LLM Routed to ArtCriticAgent.")
@@ -183,9 +187,11 @@ class ManagerAgent:
                     report = self.log_qa_agent.analyze_issues(issues)
                     logger.info(f"[Manager] Found errors:\n{report}")
                     print(f"\n[VERA Log QA] 🚨 {report}")
+                    self._progress("LogQA", report)
                 else:
                     logger.info("[Manager] No errors found.")
                     print("\n[VERA Log QA] ✅ No se encontraron errores ni warnings en el log reciente.")
+                    self._progress("LogQA", "no errors or warnings in recent log")
             success = True
             steps_taken.append({"action": "log_qa_check"})
             
@@ -238,22 +244,8 @@ class ManagerAgent:
                         success = False
         # (sin else: cada ruta maneja su propio trabajo; un fallback acá re-ejecutaba Python tras CUALQUIER ruta)
 
-        # 3. If successful, cache it for next time
-        if success and steps_taken:
-            self.action_cache.save(command, steps_taken)
-            
-        return success
+        # 3. Cache de recetas deshabilitado: el único formato replayable por el
+        # hit-path es un string de código Python, y python_agent.run() no expone
+        # el código generado. TODO: exponerlo y cachear con store_insight().
 
-    def _replay_recipe(self, steps: list) -> bool:
-        """Executes a previously cached list of steps without LLM calls."""
-        for step in steps:
-            logger.debug(f"[Manager] Replaying step: {step}")
-            action = step.get("action")
-            if action == "click":
-                # PyAutoGUI execution here
-                logger.info(f"[Replay] Clicking at {step.get('coords')}")
-            elif action == "python_script":
-                # Skip generation/evaluation and go straight to execution
-                logger.info(f"[Replay] Executing cached python script")
-                # self.python_agent._execute_code(step.get("code"))
-        return True
+        return success
