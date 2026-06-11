@@ -138,6 +138,8 @@ class VeraWebWindow(QWidget):
 
     # --- eventos hacia JS (siempre desde el main thread vía tick) ---
     def handle_event(self, event):
+        # question/question_resolved/thinking NO se persisten a propósito:
+        # al recargar la sesión, un botón de aprobar muerto sería peor que nada.
         if event.get("type") in ("user", "progress", "image", "final", "error"):
             try:
                 vera_history.append_event(HISTORY_PATH, event)
@@ -581,23 +583,52 @@ class VeraChatWindow(QWidget if HAS_PYSIDE else object):
             payload = json.dumps({"command": command}) + "\n"
             s.sendall(payload.encode("utf-8"))
 
-            # Receive response
-            data = b""
+            # Leemos línea a línea para manejar el protocolo multi-evento del
+            # agent loop (VERA_USE_AGENT_LOOP).  Cada línea es un JSON independiente.
+            buf = b""
             while True:
                 chunk = s.recv(4096)
                 if not chunk:
                     break
-                data += chunk
-                if b"\n" in data:
-                    break
+                buf += chunk
+                # Procesamos todas las líneas completas acumuladas en el buffer.
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line.decode("utf-8"))
+                    except Exception as parse_err:
+                        _pending_vera_responses.append(("red", f"parse error: {parse_err}"))
+                        continue
 
-            if data:
-                try:
-                    response = json.loads(data.decode("utf-8").strip())
-                    msg = response.get("message", "Done.")
-                    _pending_vera_responses.append(("green", msg))
-                except Exception as e:
-                    _pending_vera_responses.append(("red", str(e)))
+                    etype = event.get("type")
+
+                    if etype == "question":
+                        # Gate destructivo: la UI básica no tiene botón de aprobar.
+                        # Denegamos explícitamente para que el agent loop no quede
+                        # bloqueado esperando una respuesta que nunca va a llegar.
+                        try:
+                            s.sendall((json.dumps({"approve": False}) + "\n").encode("utf-8"))
+                        except OSError:
+                            pass
+                        _pending_vera_responses.append((
+                            "red",
+                            "La UI básica no soporta confirmaciones — acción destructiva denegada. "
+                            "Usá la UI WebEngine para aprobar acciones."
+                        ))
+                        # Seguimos leyendo: el server enviará más eventos tras la denegación.
+                        continue
+
+                    if etype in ("final", "error"):
+                        msg = event.get("message", "Done.")
+                        color = "green" if etype == "final" else "red"
+                        _pending_vera_responses.append((color, msg))
+                        return  # Respuesta definitiva recibida, cerramos.
+
+                    # Eventos intermedios (progress, thinking, etc.): los ignoramos
+                    # en la UI degradada; sólo nos interesa el mensaje final.
 
         except ConnectionRefusedError:
             _pending_vera_responses.append(("red", "Cannot connect. Is vera_server.py running?"))
