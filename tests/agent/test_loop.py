@@ -121,3 +121,23 @@ def test_emit_events():
     assert "tool_use" in types
     assert "tool_result" in types
     assert "final" in types
+
+
+def test_stop_reason_max_tokens_corta_limpio():
+    """max_tokens sin tool_use no debe appendear un user vacío (400 de la API)."""
+    client = FakeClient([_Resp("max_tokens", [_Text("respuesta trunca")])])
+    out = AgentLoop(_reg(), client).run("hola")
+    assert out["status"] == "error"
+    assert "max_tokens" in out["msg"]
+    # una sola llamada: el loop NO debe reintentar con un mensaje malformado
+    assert len(client.messages.calls) == 1
+
+
+def test_stop_reason_refusal_corta_limpio():
+    client = FakeClient([_Resp("refusal", [])])
+    events = []
+    out = AgentLoop(_reg(), client).run("hola", emit=events.append)
+    assert out["status"] == "error"
+    assert "refusal" in out["msg"]
+    assert events[-1]["type"] == "final"
+    assert events[-1]["status"] == "error"

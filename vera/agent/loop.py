@@ -76,14 +76,22 @@ class AgentLoop:
                 messages.append({"role": "assistant", "content": resp.content})
                 continue
 
-            # stop_reason == "tool_use"
-            messages.append({"role": "assistant", "content": resp.content})
-            results = [
-                self._run_tool(block, ctx, emit)
-                for block in resp.content
-                if getattr(block, "type", None) == "tool_use"
-            ]
-            messages.append({"role": "user", "content": results})
+            if resp.stop_reason == "tool_use":
+                messages.append({"role": "assistant", "content": resp.content})
+                results = [
+                    self._run_tool(block, ctx, emit)
+                    for block in resp.content
+                    if getattr(block, "type", None) == "tool_use"
+                ]
+                messages.append({"role": "user", "content": results})
+                continue
+
+            # max_tokens, refusal, stop_sequence o valores futuros: cortar limpio.
+            # Nunca appendear un mensaje user vacío — la API lo rechaza con 400.
+            msg = f"el modelo se detuvo de forma inesperada ({resp.stop_reason})"
+            if emit:
+                emit({"type": "final", "status": "error", "msg": msg})
+            return {"status": "error", "msg": msg}
 
         if emit:
             emit({"type": "final", "status": "error", "msg": "límite de iteraciones"})
