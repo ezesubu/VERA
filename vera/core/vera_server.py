@@ -1,0 +1,134 @@
+import json
+import logging
+import os
+import socket
+import threading
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+
+class VeraServer:
+    """Backend de agentes de VERA. Protocolo streaming: por cada comando responde
+    N líneas JSON (progress/image/error) y SIEMPRE una final:
+        {"type":"final","status":"success"|"error","msg":"..."}
+    Asunción: un solo cliente UI activo a la vez (progress_callback apunta a la
+    conexión en curso)."""
+
+    def __init__(self, host="127.0.0.1", port=9880, blackboard=None, manager=None):
+        self.host = host
+        self.port = port
+        # Inyectables para tests; en producción se crean los reales.
+        if blackboard is None:
+            from vera.core.blackboard import Blackboard
+            blackboard = Blackboard()
+        self.blackboard = blackboard
+        if manager is None:
+            from vera.core.manager_agent import ManagerAgent
+            manager = ManagerAgent(self.blackboard)
+        self.manager = manager
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._stop = threading.Event()
+
+    # ---- emisión ----
+
+    def _make_emitter(self, conn, lock):
+        def emit(event):
+            with lock:
+                conn.sendall((json.dumps(event) + "\n").encode("utf-8"))
+        return emit
+
+    def handle_client(self, conn, addr):
+        logger.info(f"[VeraServer] Connection from {addr}")
+        lock = threading.Lock()
+        emit = self._make_emitter(conn, lock)
+        try:
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            if not data.strip():
+                return
+
+            payload = json.loads(data.decode("utf-8").strip())
+            command = payload.get("command", "")
+            if not command:
+                emit({"type": "final", "status": "error", "msg": "Comando vacío."})
+                return
+
+            if command.strip().lower() in ("hello world", "hello world!"):
+                emit({"type": "final", "status": "success",
+                      "msg": "Hello World! The VERA-Unreal communication bridge is online."})
+                return
+
+            self.blackboard.progress_callback = emit
+            try:
+                success = self.manager.execute_command(command)
+                if success:
+                    emit({"type": "final", "status": "success", "msg": "Done."})
+                else:
+                    emit({"type": "final", "status": "error",
+                          "msg": "No pude completar el comando. Revisá la timeline y los logs del servidor."})
+            except Exception as llm_error:
+                logger.error(f"[VeraServer] Error: {llm_error}")
+                emit({"type": "final", "status": "error",
+                      "msg": f"Error procesando el comando: {llm_error}"})
+            finally:
+                self.blackboard.progress_callback = None
+        except Exception as e:
+            logger.error(f"[VeraServer] Error handling client: {e}")
+        finally:
+            conn.close()
+
+    # ---- ciclo de vida ----
+
+    def _load_env(self):
+        if not os.environ.get("GEMINI_API_KEY"):
+            env_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+            if os.path.exists(env_path):
+                with open(env_path, "r") as f:
+                    for line in f:
+                        if line.startswith("GEMINI_API_KEY="):
+                            os.environ["GEMINI_API_KEY"] = line.split("=", 1)[1].strip()
+
+    def _bind(self):
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.port = self.server_socket.getsockname()[1]
+        return self.port
+
+    def _accept_loop(self):
+        self.server_socket.settimeout(0.5)
+        while not self._stop.is_set():
+            try:
+                conn, addr = self.server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
+
+    def start_in_thread(self):
+        """Para tests: bindea (port=0 → efímero) y acepta en un hilo. Devuelve el puerto."""
+        port = self._bind()
+        threading.Thread(target=self._accept_loop, daemon=True).start()
+        return port
+
+    def stop(self):
+        self._stop.set()
+        self.server_socket.close()
+
+    def start(self):
+        """Modo producción: bloqueante."""
+        self._load_env()
+        self._bind()
+        logger.info(f"[VeraServer] VERA streaming server on {self.host}:{self.port}")
+        self._accept_loop()
+
+
+if __name__ == "__main__":
+    VeraServer().start()
