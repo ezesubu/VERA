@@ -161,12 +161,14 @@ class ManagerAgent:
             else:
                 self.git_agent.auto_commit_fix(command)
                 steps_taken.append({"action": "git_commit"})
+            success = True
                 
         elif route == "CRITIC":
             logger.info("[Manager] LLM Routed to ArtCriticAgent.")
             self._progress("Critic", "analyzing scene")
             critique = self.art_critic.critique_scene()
             steps_taken.append({"action": "art_critique", "notes": critique})
+            success = bool(critique)
             
         elif route == "LOG_QA":
             logger.info("[Manager] LLM Routed to LogQAAgent.")
@@ -234,11 +236,7 @@ class ManagerAgent:
                     except ImportError:
                         logger.error("[Manager] PyAutoGUI not installed. Cannot perform click.")
                         success = False
-        else:
-            logger.info("[Manager] LLM Routed to UE Python Agent.")
-            success = self.python_agent.run(command)
-            if success:
-                steps_taken.append({"action": "python_script", "task": command})
+        # (sin else: cada ruta maneja su propio trabajo; un fallback acá re-ejecutaba Python tras CUALQUIER ruta)
 
         # 3. If successful, cache it for next time
         if success and steps_taken:
