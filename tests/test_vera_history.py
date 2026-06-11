@@ -42,3 +42,9 @@ def test_corrupt_lines_are_skipped(tmp_path):
     path.write_text('{"type":"user","msg":"ok"}\nBASURA NO JSON\n', encoding="utf-8")
     events = vera_history.load_recent(path)
     assert events == [{"type": "user", "msg": "ok"}]
+
+
+def test_load_negative_n_returns_empty(tmp_path):
+    path = tmp_path / "h.jsonl"
+    vera_history.append_event(path, {"type": "user", "msg": "x"})
+    assert vera_history.load_recent(path, n=-5) == []
