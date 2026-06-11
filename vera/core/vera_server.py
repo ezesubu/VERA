@@ -57,7 +57,10 @@ class VeraServer:
 
         Invariante: mientras el gate espera en recv, NINGÚN hilo debe emitir por
         este socket (hoy se cumple: la sesión serializa los comandos y no hay
-        watchers; revisar al implementar Fase 3)."""
+        watchers; revisar al implementar Fase 3).
+        Con varios tool_use destructivos en un turno, las preguntas viajan en
+        serie (el loop ejecuta tools secuencialmente) — ese orden es parte del
+        contrato del protocolo."""
         def confirm(tool, args):
             if os.environ.get("VERA_AUTO_APPROVE"):
                 return True

@@ -229,6 +229,7 @@ class VeraWebWindow(QWidget):
                                 approve = _answer_queue.get(timeout=CONFIRM_UI_TIMEOUT)
                             except queue.Empty:
                                 approve = False
+                                _pending_events.append({"type": "question_resolved", "approved": False})
                                 _pending_events.append({
                                     "type": "progress", "agent": "Gate",
                                     "msg": "sin respuesta del usuario — acción denegada"})

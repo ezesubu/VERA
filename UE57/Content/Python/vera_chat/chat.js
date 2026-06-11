@@ -153,6 +153,17 @@ window.veraChat = {
         tl.appendChild(q);
         break;
       }
+      case "question_resolved": {
+        // Resolución sintética (p.ej. timeout): cerrar la última pregunta abierta.
+        const tl = ensureTimeline();
+        const open = tl.querySelectorAll(".tl-item.question:not(.approved):not(.denied)");
+        const q = open[open.length - 1];
+        if (q) {
+          q.classList.add(e.approved ? "approved" : "denied");
+          q.querySelectorAll("button").forEach((btn) => { btn.disabled = true; });
+        }
+        break;
+      }
       case "error": {
         bubble("error").appendChild(md(e.msg));
         break;

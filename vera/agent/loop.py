@@ -93,6 +93,9 @@ class AgentLoop:
 
             if resp.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": resp.content})
+                # SECUENCIAL a propósito: cada tool destructiva hace un round-trip
+                # de confirmación por el MISMO socket; paralelizar esto mezclaría
+                # las respuestas del gate. No convertir en concurrent/gather.
                 results = [
                     self._run_tool(block, ctx, emit, confirm)
                     for block in resp.content
