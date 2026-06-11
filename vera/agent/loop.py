@@ -83,6 +83,11 @@ class AgentLoop:
                     for block in resp.content
                     if getattr(block, "type", None) == "tool_use"
                 ]
+                if not results:  # nunca appendear content:[] — rompe la API con 400
+                    msg = "stop_reason tool_use sin bloques tool_use en el contenido"
+                    if emit:
+                        emit({"type": "final", "status": "error", "msg": msg})
+                    return {"status": "error", "msg": msg}
                 messages.append({"role": "user", "content": results})
                 continue
 

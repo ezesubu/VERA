@@ -141,3 +141,19 @@ def test_stop_reason_refusal_corta_limpio():
     assert "refusal" in out["msg"]
     assert events[-1]["type"] == "final"
     assert events[-1]["status"] == "error"
+
+
+def test_tool_use_sin_bloques_corta_limpio():
+    """stop_reason tool_use con content sin bloques tool_use no debe appendear content:[]."""
+    client = FakeClient([_Resp("tool_use", [_Text("solo texto")])])
+    out = AgentLoop(_reg(), client).run("hola")
+    assert out["status"] == "error"
+    assert len(client.messages.calls) == 1
+
+
+def test_stop_reason_stop_sequence_corta_limpio():
+    client = FakeClient([_Resp("stop_sequence", [_Text("cortado")])])
+    out = AgentLoop(_reg(), client).run("hola")
+    assert out["status"] == "error"
+    assert "stop_sequence" in out["msg"]
+    assert len(client.messages.calls) == 1
