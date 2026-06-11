@@ -52,9 +52,22 @@ class AgentLoop:
         self.bridge_port = bridge_port
         self.confirm = confirm
 
-    def run(self, command: str, emit: Optional[Callable[[dict], None]] = None) -> dict:
+    def run(
+        self,
+        command: str,
+        emit: Optional[Callable[[dict], None]] = None,
+        *,
+        messages: Optional[list] = None,
+        confirm: Optional[Callable] = None,
+    ) -> dict:
+        """`messages`: historial externo (lo muta in place — lo posee la Session).
+        `confirm`: override por-comando del gate destructivo (p.ej. el round-trip
+        a la UI de la conexión en curso)."""
         ctx = ToolContext(bridge_port=self.bridge_port, emit=emit, llm=self.llm)
-        messages = [{"role": "user", "content": command}]
+        confirm = confirm if confirm is not None else self.confirm
+        if messages is None:
+            messages = []
+        messages.append({"role": "user", "content": command})
         tools = self.registry.to_anthropic()
 
         for _ in range(MAX_ITERATIONS):
@@ -68,6 +81,7 @@ class AgentLoop:
                 return {"status": "error", "msg": msg}
 
             if resp.stop_reason == "end_turn":
+                messages.append({"role": "assistant", "content": resp.content})
                 text = _final_text(resp.content)
                 if emit:
                     emit({"type": "final", "status": "success", "msg": text})
@@ -80,7 +94,7 @@ class AgentLoop:
             if resp.stop_reason == "tool_use":
                 messages.append({"role": "assistant", "content": resp.content})
                 results = [
-                    self._run_tool(block, ctx, emit)
+                    self._run_tool(block, ctx, emit, confirm)
                     for block in resp.content
                     if getattr(block, "type", None) == "tool_use"
                 ]
@@ -103,13 +117,13 @@ class AgentLoop:
             emit({"type": "final", "status": "error", "msg": "límite de iteraciones"})
         return {"status": "error", "msg": "límite de iteraciones alcanzado"}
 
-    def _run_tool(self, block, ctx: ToolContext, emit) -> dict:
+    def _run_tool(self, block, ctx: ToolContext, emit, confirm) -> dict:
         tool = self.registry.get(block.name)
         if tool is None:
             return _tool_result(block.id, f"tool desconocida: {block.name}", True)
         if emit:
             emit({"type": "tool_use", "agent": tool.name, "input": block.input})
-        if tool.destructive and self.confirm and not self.confirm(tool, block.input):
+        if tool.destructive and confirm and not confirm(tool, block.input):
             return _tool_result(block.id, "El usuario rechazó la acción.", True)
         try:
             result = tool.execute(block.input, ctx)

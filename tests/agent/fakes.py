@@ -69,7 +69,11 @@ class _FakeMessages:
         self.calls = []
 
     def stream(self, **kwargs):
-        self.calls.append(kwargs)
+        # Captura snapshot del historial para que las aserciones de los tests
+        # vean el estado al momento de la llamada, no el post-mutación.
+        snapshot = dict(kwargs)
+        snapshot["messages"] = list(kwargs.get("messages", []))
+        self.calls.append(snapshot)
         item = self._scripted.pop(0)
         resp, events = item if isinstance(item, tuple) else (item, ())
         return _FakeStream(resp, events)

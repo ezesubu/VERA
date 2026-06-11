@@ -36,6 +36,7 @@ class VeraServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._stop = threading.Event()
         self._busy = threading.Lock()
+        self._session = None  # AgentSession persistente (solo con VERA_USE_AGENT_LOOP)
 
     # ---- emisión ----
 
@@ -77,14 +78,10 @@ class VeraServer:
 
             self.blackboard.progress_callback = emit
             try:
-                # Cerebro agéntico (Fase 1): activable por env var, Manager como fallback.
+                # Cerebro agéntico: sesión persistente (historial entre comandos),
+                # Manager viejo como fallback si el flag está apagado.
                 if os.environ.get("VERA_USE_AGENT_LOOP"):
-                    import anthropic
-                    from vera.agent.factory import build_agent_loop
-                    loop = build_agent_loop(anthropic.Anthropic())
-                    result = loop.run(command, emit=emit)
-                    # build_agent_loop no pasa `confirm`, así que el gate destructivo
-                    # está inactivo en Fase 1 (round-trip de confirmación = Fase 2).
+                    result = self._agent_session().run(command, emit=emit)
                     success = result.get("status") == "success"
                     return
 
@@ -123,6 +120,16 @@ class VeraServer:
             logger.error(f"[VeraServer] Error handling client: {e}")
         finally:
             conn.close()
+
+    def _agent_session(self):
+        """Sesión agéntica persistente: el historial sobrevive entre comandos.
+        Lazy: solo se construye si el flag está activo."""
+        if self._session is None:
+            import anthropic
+            from vera.agent.factory import build_agent_loop
+            from vera.agent.session import AgentSession
+            self._session = AgentSession(build_agent_loop(anthropic.Anthropic()))
+        return self._session
 
     # ---- ciclo de vida ----
 
