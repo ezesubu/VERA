@@ -9,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 CONFIRM_TIMEOUT = 120.0  # segundos para que el usuario apruebe una accion destructiva
+MAX_CONFIRM_BYTES = 4096  # una respuesta legitima ({"approve": true}) pesa < 100 bytes
 
 
 class VeraServer:
@@ -52,7 +53,11 @@ class VeraServer:
         """Gate destructivo con round-trip al cliente: emite un evento `question`
         y espera UNA línea JSON {"approve": bool} por el mismo socket.
         Ante la duda (timeout, desconexión, JSON inválido) DENIEGA.
-        VERA_AUTO_APPROVE=1 saltea el gate (autopilot/testing)."""
+        VERA_AUTO_APPROVE=1 saltea el gate (autopilot/testing).
+
+        Invariante: mientras el gate espera en recv, NINGÚN hilo debe emitir por
+        este socket (hoy se cumple: la sesión serializa los comandos y no hay
+        watchers; revisar al implementar Fase 3)."""
         def confirm(tool, args):
             if os.environ.get("VERA_AUTO_APPROVE"):
                 return True
@@ -66,6 +71,8 @@ class VeraServer:
                 conn.settimeout(CONFIRM_TIMEOUT)
                 data = b""
                 while not data.endswith(b"\n"):
+                    if len(data) >= MAX_CONFIRM_BYTES:
+                        return False  # respuesta sin \n demasiado larga → denegar
                     chunk = conn.recv(4096)
                     if not chunk:
                         return False  # cliente desconectado → denegar
