@@ -1,6 +1,6 @@
 from vera.agent.loop import AgentLoop
 from vera.agent.registry import ToolRegistry
-from vera.agent.tool import Tool, ToolResult
+from vera.agent.tool import Tool, ToolResult, image_block
 
 
 # --- fakes que imitan la forma del SDK de Anthropic ---
@@ -157,3 +157,47 @@ def test_stop_reason_stop_sequence_corta_limpio():
     assert out["status"] == "error"
     assert "stop_sequence" in out["msg"]
     assert len(client.messages.calls) == 1
+
+
+def test_tool_result_con_blocks_pasa_intacto():
+    class CameraTool(Tool):
+        name = "camera"
+        description = "c"
+        input_schema = {"type": "object", "properties": {}}
+        destructive = False
+
+        def execute(self, args, ctx):
+            return ToolResult([image_block("QUJD")])
+
+    reg = ToolRegistry()
+    reg.register(CameraTool())
+    client = FakeClient([
+        _Resp("tool_use", [_ToolUse("t1", "camera", {})]),
+        _Resp("end_turn", [_Text("vi la imagen")]),
+    ])
+    AgentLoop(reg, client).run("sacá una foto")
+    tr = client.messages.calls[1]["messages"][-1]["content"][0]
+    assert isinstance(tr["content"], list)
+    assert tr["content"][0]["type"] == "image"
+
+
+def test_tool_result_largo_se_trunca():
+    class VerboseTool(Tool):
+        name = "verbose"
+        description = "v"
+        input_schema = {"type": "object", "properties": {}}
+        destructive = False
+
+        def execute(self, args, ctx):
+            return ToolResult("x" * 50_000)
+
+    reg = ToolRegistry()
+    reg.register(VerboseTool())
+    client = FakeClient([
+        _Resp("tool_use", [_ToolUse("t1", "verbose", {})]),
+        _Resp("end_turn", [_Text("ok")]),
+    ])
+    AgentLoop(reg, client).run("dale")
+    tr = client.messages.calls[1]["messages"][-1]["content"][0]
+    assert len(tr["content"]) < 50_000
+    assert "truncado" in tr["content"]

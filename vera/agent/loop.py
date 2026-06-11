@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "claude-opus-4-8"
 MAX_ITERATIONS = 20
+MAX_TOOL_RESULT_CHARS = 20_000  # un log gigante no debe inflar el contexto sin control
 
 
 def _final_text(content) -> str:
@@ -17,7 +18,7 @@ def _final_text(content) -> str:
     return "\n".join(parts) if parts else "(sin texto)"
 
 
-def _tool_result(tool_use_id: str, content: str, is_error: bool) -> dict:
+def _tool_result(tool_use_id: str, content, is_error: bool) -> dict:
     return {
         "type": "tool_result",
         "tool_use_id": tool_use_id,
@@ -115,6 +116,12 @@ class AgentLoop:
         except Exception as e:  # una tool rota nunca tumba el loop
             logger.exception("[AgentLoop] la tool %s lanzó excepción", tool.name)
             result = ToolResult(f"excepción en la tool: {e}", is_error=True)
+        if isinstance(result.content, str) and len(result.content) > MAX_TOOL_RESULT_CHARS:
+            result = ToolResult(
+                result.content[:MAX_TOOL_RESULT_CHARS]
+                + f"\n[...resultado truncado: {len(result.content)} caracteres en total]",
+                is_error=result.is_error,
+            )
         if emit:
             emit({"type": "tool_result", "agent": tool.name, "is_error": result.is_error})
         return _tool_result(block.id, result.content, result.is_error)

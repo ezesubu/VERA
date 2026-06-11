@@ -7,9 +7,21 @@ from typing import Any, Callable, Optional
 
 @dataclass
 class ToolResult:
-    """Resultado de ejecutar una tool. `content` vuelve al modelo."""
-    content: str
+    """Resultado de ejecutar una tool. `content` vuelve al modelo.
+
+    `content` puede ser un string (texto plano) o una lista de content blocks
+    de la API — p.ej. texto + imagen para tools de percepción (ver `image_block`).
+    """
+    content: Any
     is_error: bool = False
+
+
+def image_block(data_b64: str, media_type: str = "image/png") -> dict:
+    """Content block de imagen (base64) para devolver en un ToolResult."""
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": media_type, "data": data_b64},
+    }
 
 
 @dataclass
