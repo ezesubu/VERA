@@ -50,3 +50,58 @@ def send_json(port, payload, timeout=DEFAULT_TIMEOUT, host="127.0.0.1"):
         return json.loads(buf.decode("utf-8").strip())
     except ValueError as e:
         raise UEConnectionError(f"respuesta malformada del servidor: {e}") from e
+
+
+def send_json_stream(port, payload, timeout=DEFAULT_TIMEOUT, host="127.0.0.1", on_event=None):
+    """Envía un payload y lee un STREAM de líneas JSON hasta el evento
+    {"type":"final"} (o cierre de conexión). Devuelve la lista de eventos.
+    on_event(evento) se invoca por cada línea a medida que llega."""
+    events = []
+    s = None
+    try:
+        # Two-phase connect: separate timeout handling for connect vs. stream (Windows compat)
+        try:
+            s = socket.create_connection((host, port), timeout=timeout)
+        except socket.timeout as e:
+            raise UEConnectionError(f"sin respuesta al conectar en {timeout:.0f}s") from e
+        except OSError as e:
+            raise UEConnectionError(str(e)) from e
+
+        # Connection established; stream with timeout
+        s.settimeout(timeout)
+        s.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+        buf = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line.decode("utf-8"))
+                except ValueError as e:
+                    raise UEConnectionError(f"evento malformado: {e}") from e
+                events.append(event)
+                if on_event is not None:
+                    try:
+                        on_event(event)
+                    except Exception:
+                        pass
+                if event.get("type") == "final":
+                    return events
+    except UEConnectionError:
+        raise
+    except socket.timeout as e:
+        raise UETimeoutError(f"stream sin final en {timeout:.0f}s") from e
+    except OSError as e:
+        raise UEConnectionError(str(e)) from e
+    finally:
+        if s:
+            s.close()
+
+    if not events:
+        raise UEConnectionError("el servidor cerró sin enviar eventos")
+    return events

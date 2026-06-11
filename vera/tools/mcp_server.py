@@ -87,16 +87,26 @@ def check_status(bridge_port=None, backend_port=None):
 
 
 def send_vera_command(text, timeout=300.0, port=None):
-    """Comando de alto nivel al ManagerAgent (pipeline de agentes/recetas)."""
+    """Comando de alto nivel al pipeline de agentes (protocolo streaming).
+    Devuelve el evento final + la lista completa en "events"."""
+    from vera.tools.ue_conn import send_json_stream
     try:
-        return send_json(port or BACKEND_PORT, {"command": text}, timeout=timeout)
+        events = send_json_stream(port or BACKEND_PORT, {"command": text}, timeout=timeout)
     except UEConnectionError:
-        return {"status": "error", "message": BACKEND_DOWN_MSG}
+        return {"status": "error", "message": BACKEND_DOWN_MSG, "events": []}
     except UETimeoutError:
         return {
             "status": "error",
             "message": f"El backend no respondió en {timeout:.0f}s. Mirá sus logs.",
+            "events": [],
         }
+    final = events[-1]
+    return {
+        "status": final.get("status", "error"),
+        "msg": final.get("msg", ""),
+        "message": final.get("msg", ""),  # compat con el tool vera_command existente
+        "events": events,
+    }
 
 
 _SCREENSHOT_SCRIPT = (

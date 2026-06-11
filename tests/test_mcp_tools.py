@@ -87,11 +87,12 @@ def test_check_status_bridge_up(fake_bridge):
 
 
 def test_send_vera_command(fake_bridge):
-    # El backend responde {"status", "message"} — mismo framing
-    fake_bridge["handler"] = lambda p: {"status": "success", "message": f"eco: {p['command']}"}
+    # El backend ahora responde streaming; el fake emite solo la final
+    fake_bridge["handler"] = lambda p: {
+        "type": "final", "status": "success", "msg": f"eco: {p['command']}"}
     result = send_vera_command("hello world", port=fake_bridge["port"])
     assert result["status"] == "success"
-    assert "hello world" in result["message"]
+    assert "hello world" in result["msg"]
 
 
 def test_check_status_survives_garbage_bridge(garbage_bridge):
