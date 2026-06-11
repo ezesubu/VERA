@@ -96,7 +96,9 @@ class PyBridge(QObject):
                     _os.path.dirname(_os.path.abspath(__file__))))
             shots_dir = _os.path.realpath(_os.path.join(_ue_root, "Saved", "Screenshots"))
             saved_vera = _os.path.realpath(_os.path.join(_ue_root, "Saved", "VERA"))
-            if not (real.startswith(shots_dir) or real.startswith(saved_vera)):
+            def _inside(child, parent):
+                return child == parent or child.startswith(parent + _os.sep)
+            if not (_inside(real, shots_dir) or _inside(real, saved_vera)):
                 unreal.log_warning(f"[VERA UI] open_image rechazado (fuera de Saved): {real}")
                 return
             if _os.path.splitext(real)[1].lower() not in (".png", ".jpg", ".jpeg", ".bmp"):
@@ -133,7 +135,7 @@ class VeraWebWindow(QWidget):
                 vera_history.append_event(HISTORY_PATH, event)
             except OSError as e:
                 unreal.log_warning(f"[VERA UI] historial no disponible: {e}")
-        js = "veraChat.dispatch(" + json.dumps(event, ensure_ascii=False) + ")"
+        js = "veraChat.dispatch(" + json.dumps(event, ensure_ascii=True) + ")"
         self.view.page().runJavaScript(js)
 
     def on_js_ready(self):
@@ -142,7 +144,7 @@ class VeraWebWindow(QWidget):
         if events:
             self.view.page().runJavaScript(
                 "veraChat.dispatch(" + json.dumps(
-                    {"type": "history", "events": events}, ensure_ascii=False) + ")")
+                    {"type": "history", "events": events}, ensure_ascii=True) + ")")
         else:
             self.handle_event({"type": "final", "status": "success",
                                "msg": "Hi, I'm VERA. What are we building today?"})
