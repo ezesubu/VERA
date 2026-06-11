@@ -8,6 +8,8 @@ import importlib
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+CONFIRM_TIMEOUT = 120.0  # segundos para que el usuario apruebe una accion destructiva
+
 
 class VeraServer:
     """Backend de agentes de VERA. Protocolo streaming: por cada comando responde
@@ -46,6 +48,38 @@ class VeraServer:
                 conn.sendall((json.dumps(event) + "\n").encode("utf-8"))
         return emit
 
+    def _make_confirm(self, conn, emit):
+        """Gate destructivo con round-trip al cliente: emite un evento `question`
+        y espera UNA línea JSON {"approve": bool} por el mismo socket.
+        Ante la duda (timeout, desconexión, JSON inválido) DENIEGA.
+        VERA_AUTO_APPROVE=1 saltea el gate (autopilot/testing)."""
+        def confirm(tool, args):
+            if os.environ.get("VERA_AUTO_APPROVE"):
+                return True
+            emit({
+                "type": "question",
+                "tool": tool.name,
+                "msg": f"VERA quiere ejecutar la acción destructiva '{tool.name}'. ¿Aprobar?",
+                "args_preview": str(args)[:500],
+            })
+            try:
+                conn.settimeout(CONFIRM_TIMEOUT)
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        return False  # cliente desconectado → denegar
+                    data += chunk
+                return bool(json.loads(data.decode("utf-8").strip()).get("approve"))
+            except (OSError, ValueError):
+                return False  # timeout o respuesta inválida → denegar
+            finally:
+                try:
+                    conn.settimeout(None)
+                except OSError:
+                    pass
+        return confirm
+
     def handle_client(self, conn, addr):
         logger.info(f"[VeraServer] Connection from {addr}")
         lock = threading.Lock()
@@ -81,7 +115,8 @@ class VeraServer:
                 # Cerebro agéntico: sesión persistente (historial entre comandos),
                 # Manager viejo como fallback si el flag está apagado.
                 if os.environ.get("VERA_USE_AGENT_LOOP"):
-                    result = self._agent_session().run(command, emit=emit)
+                    result = self._agent_session().run(
+                        command, emit=emit, confirm=self._make_confirm(conn, emit))
                     success = result.get("status") == "success"
                     return
 
