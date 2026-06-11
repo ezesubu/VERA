@@ -41,3 +41,15 @@ def test_trim_corta_en_turno_user_de_texto_plano():
     # nunca arrancar el historial en medio de un par tool_use/tool_result
     assert s.messages[0]["role"] == "user"
     assert isinstance(s.messages[0]["content"], str)
+
+
+def test_trim_puede_vaciar_si_no_hay_user_plano():
+    """Si después del corte no queda ningún user de texto plano, el historial
+    queda vacío y la sesión sigue funcionando con el comando nuevo."""
+    client = FakeClient([_Resp("end_turn", [_Text("ok")])])
+    s = AgentSession(AgentLoop(ToolRegistry(), client))
+    for _ in range(MAX_HISTORY_MESSAGES + 1):
+        s.messages.append({"role": "assistant", "content": [{"type": "text", "text": "x"}]})
+        s.messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "x"}]})
+    s.run("nuevo comando")
+    assert s.messages[0] == {"role": "user", "content": "nuevo comando"}

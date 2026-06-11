@@ -6,8 +6,11 @@ vía run() / inject().
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 MAX_HISTORY_MESSAGES = 40  # el truncado de contexto fino llega con compaction (Fase 4)
 
@@ -24,6 +27,9 @@ class AgentSession:
         emit: Optional[Callable[[dict], None]] = None,
         confirm: Optional[Callable] = None,
     ) -> dict:
+        """Ejecuta un comando dentro de la sesión (muta `self.messages`).
+        `confirm`: override del gate destructivo para esta llamada puntual
+        (p.ej. el round-trip al socket de la conexión en curso)."""
         with self._lock:
             self._trim()
             return self.loop.run(command, emit=emit, messages=self.messages, confirm=confirm)
@@ -49,3 +55,6 @@ class AgentSession:
             and isinstance(self.messages[0].get("content"), str)
         ):
             self.messages.pop(0)
+        if not self.messages:
+            logger.warning(
+                "[AgentSession] _trim vació el historial: no quedó ningún turno user de texto plano")
