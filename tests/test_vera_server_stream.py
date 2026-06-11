@@ -1,6 +1,7 @@
 import json
 import socket
 import threading
+import time
 
 import pytest
 
@@ -87,5 +88,61 @@ def test_callback_cleared_after_command():
     try:
         _send_and_read_events(port, "build")
         assert bb.progress_callback is None
+    finally:
+        srv.stop()
+
+
+def test_manager_exception_yields_error_final():
+    bb = Blackboard()
+
+    class ExplodingManager:
+        def execute_command(self, command):
+            raise RuntimeError("boom")
+
+    srv = VeraServer(port=0, blackboard=bb, manager=ExplodingManager())
+    port = srv.start_in_thread()
+    try:
+        events = _send_and_read_events(port, "explota")
+        assert events[-1]["type"] == "final"
+        assert events[-1]["status"] == "error"
+        assert bb.progress_callback is None
+    finally:
+        srv.stop()
+
+
+def test_concurrent_second_command_gets_busy_final():
+    bb = Blackboard()
+
+    class SlowManager:
+        def __init__(self, blackboard):
+            self.blackboard = blackboard
+            self.release = threading.Event()
+
+        def execute_command(self, command):
+            self.blackboard.report_progress("Manager", "working")
+            self.release.wait(timeout=10.0)
+            return True
+
+    mgr = SlowManager(bb)
+    srv = VeraServer(port=0, blackboard=bb, manager=mgr)
+    port = srv.start_in_thread()
+    try:
+        results = {}
+
+        def first():
+            results["a"] = _send_and_read_events(port, "lento")
+
+        t = threading.Thread(target=first, daemon=True)
+        t.start()
+        deadline = time.time() + 5.0
+        while not srv._busy.locked() and time.time() < deadline:
+            time.sleep(0.02)
+        assert srv._busy.locked(), "el primer comando nunca tomó el lock"
+        results["b"] = _send_and_read_events(port, "segundo")
+        assert results["b"][-1]["status"] == "error"
+        assert "ocupada" in results["b"][-1]["msg"]
+        mgr.release.set()
+        t.join(timeout=10.0)
+        assert results["a"][-1]["status"] == "success"
     finally:
         srv.stop()

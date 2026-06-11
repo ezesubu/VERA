@@ -18,6 +18,8 @@ class VeraServer:
     def __init__(self, host="127.0.0.1", port=9880, blackboard=None, manager=None):
         self.host = host
         self.port = port
+        # .env primero: ManagerAgent construye su cliente LLM en __init__ y lee la key del entorno
+        self._load_env()
         # Inyectables para tests; en producción se crean los reales.
         if blackboard is None:
             from vera.core.blackboard import Blackboard
@@ -30,6 +32,7 @@ class VeraServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._stop = threading.Event()
+        self._busy = threading.Lock()
 
     # ---- emisión ----
 
@@ -64,6 +67,11 @@ class VeraServer:
                       "msg": "Hello World! The VERA-Unreal communication bridge is online."})
                 return
 
+            if not self._busy.acquire(blocking=False):
+                emit({"type": "final", "status": "error",
+                      "msg": "VERA está ocupada con otro comando. Esperá a que termine."})
+                return
+
             self.blackboard.progress_callback = emit
             try:
                 success = self.manager.execute_command(command)
@@ -78,6 +86,7 @@ class VeraServer:
                       "msg": f"Error procesando el comando: {llm_error}"})
             finally:
                 self.blackboard.progress_callback = None
+                self._busy.release()
         except Exception as e:
             logger.error(f"[VeraServer] Error handling client: {e}")
         finally:
@@ -86,6 +95,7 @@ class VeraServer:
     # ---- ciclo de vida ----
 
     def _load_env(self):
+        # TODO: cargar también ANTHROPIC_API_KEY / OPENAI_API_KEY si VERA_LLM_PROVIDER cambia
         if not os.environ.get("GEMINI_API_KEY"):
             env_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
@@ -124,7 +134,6 @@ class VeraServer:
 
     def start(self):
         """Modo producción: bloqueante."""
-        self._load_env()
         self._bind()
         logger.info(f"[VeraServer] VERA streaming server on {self.host}:{self.port}")
         self._accept_loop()
