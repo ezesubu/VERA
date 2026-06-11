@@ -58,14 +58,7 @@ class AgentLoop:
         tools = self.registry.to_anthropic()
 
         for _ in range(MAX_ITERATIONS):
-            resp = self.llm.messages.create(
-                model=self.model,
-                max_tokens=16000,
-                thinking={"type": "adaptive"},
-                system=self.system,
-                tools=tools,
-                messages=messages,
-            )
+            resp = self._call_llm(messages, tools, emit)
 
             if resp.stop_reason == "end_turn":
                 text = _final_text(resp.content)
@@ -125,3 +118,26 @@ class AgentLoop:
         if emit:
             emit({"type": "tool_result", "agent": tool.name, "is_error": result.is_error})
         return _tool_result(block.id, result.content, result.is_error)
+
+    def _call_llm(self, messages, tools, emit):
+        """Una llamada streaming al modelo. Emite los deltas de thinking al
+        timeline (en claude-opus-4-8 el thinking viene omitido salvo que se
+        pida display=summarized). El texto NO se emite por delta: el evento
+        `final` ya pinta la respuesta completa."""
+        with self.llm.messages.stream(
+            model=self.model,
+            max_tokens=16000,
+            thinking={"type": "adaptive", "display": "summarized"},
+            system=self.system,
+            tools=tools,
+            messages=messages,
+        ) as stream:
+            for event in stream:
+                if (
+                    emit
+                    and getattr(event, "type", None) == "content_block_delta"
+                    and getattr(getattr(event, "delta", None), "type", None) == "thinking_delta"
+                    and event.delta.thinking
+                ):
+                    emit({"type": "thinking", "msg": event.delta.thinking})
+            return stream.get_final_message()

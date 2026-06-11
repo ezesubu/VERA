@@ -1,44 +1,7 @@
+from tests.agent.fakes import FakeClient, _Resp, _Text, _ToolUse, thinking_event
 from vera.agent.loop import AgentLoop
 from vera.agent.registry import ToolRegistry
 from vera.agent.tool import Tool, ToolResult, image_block
-
-
-# --- fakes que imitan la forma del SDK de Anthropic ---
-class _Text:
-    type = "text"
-
-    def __init__(self, text):
-        self.text = text
-
-
-class _ToolUse:
-    type = "tool_use"
-
-    def __init__(self, id, name, input):
-        self.id = id
-        self.name = name
-        self.input = input
-
-
-class _Resp:
-    def __init__(self, stop_reason, content):
-        self.stop_reason = stop_reason
-        self.content = content
-
-
-class _FakeMessages:
-    def __init__(self, scripted):
-        self._scripted = list(scripted)
-        self.calls = []
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        return self._scripted.pop(0)
-
-
-class FakeClient:
-    def __init__(self, scripted):
-        self.messages = _FakeMessages(scripted)
 
 
 class EchoTool(Tool):
@@ -249,3 +212,19 @@ def test_tool_result_truncado_respeta_el_limite_estricto():
     tr = client.messages.calls[1]["messages"][-1]["content"][0]
     assert len(tr["content"]) <= MAX_TOOL_RESULT_CHARS
     assert "truncado" in tr["content"]
+
+
+def test_streaming_emite_thinking_al_timeline():
+    client = FakeClient([
+        (_Resp("end_turn", [_Text("listo")]), [thinking_event("primero miro el nivel...")]),
+    ])
+    events = []
+    AgentLoop(_reg(), client).run("x", emit=events.append)
+    assert {"type": "thinking", "msg": "primero miro el nivel..."} in events
+
+
+def test_request_pide_thinking_summarized():
+    client = FakeClient([_Resp("end_turn", [_Text("ok")])])
+    AgentLoop(_reg(), client).run("x")
+    kwargs = client.messages.calls[0]
+    assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
