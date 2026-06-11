@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import threading
+import importlib
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ class VeraServer:
             blackboard = Blackboard()
         self.blackboard = blackboard
         if manager is None:
+            import vera.core.manager_agent
+            importlib.reload(vera.core.manager_agent)
             from vera.core.manager_agent import ManagerAgent
             manager = ManagerAgent(self.blackboard)
         self.manager = manager
@@ -74,6 +77,35 @@ class VeraServer:
 
             self.blackboard.progress_callback = emit
             try:
+                # Cerebro agéntico (Fase 1): activable por env var, Manager como fallback.
+                if os.environ.get("VERA_USE_AGENT_LOOP"):
+                    import anthropic
+                    from vera.agent.factory import build_agent_loop
+                    loop = build_agent_loop(anthropic.Anthropic())
+                    result = loop.run(command, emit=emit)
+                    # build_agent_loop no pasa `confirm`, así que el gate destructivo
+                    # está inactivo en Fase 1 (round-trip de confirmación = Fase 2).
+                    success = result.get("status") == "success"
+                    return
+
+                # Fast keyword route: bypass manager_agent caching issue
+                lower_cmd = command.lower()
+                analyzer_kw = ["missing", "analyze", "analysis", "scan", "niagara", "acf", "gas",
+                               "what assets", "que falta", "assets are", "plugins", "installed",
+                               "detect", "check for", "falta", "tiene", "project has"]
+                if any(kw in lower_cmd for kw in analyzer_kw):
+                    emit({"type": "progress", "agent": "Analyzer", "msg": "scanning project"})
+                    from vera.core.project_analyzer_agent import ProjectAnalyzerAgent
+                    analyzer = ProjectAnalyzerAgent(self.blackboard)
+                    result = analyzer.analyze()
+                    if result and result.get("summary"):
+                        success = True
+                        emit({"type": "final", "status": "success", "msg": result["summary"]})
+                    else:
+                        success = False
+                        emit({"type": "final", "status": "error", "msg": "No se pudo analizar el proyecto."})
+                    return
+
                 success = self.manager.execute_command(command)
                 if success:
                     emit({"type": "final", "status": "success", "msg": "Done."})
@@ -95,15 +127,19 @@ class VeraServer:
     # ---- ciclo de vida ----
 
     def _load_env(self):
-        # TODO: cargar también ANTHROPIC_API_KEY / OPENAI_API_KEY si VERA_LLM_PROVIDER cambia
-        if not os.environ.get("GEMINI_API_KEY"):
-            env_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-            if os.path.exists(env_path):
-                with open(env_path, "r") as f:
-                    for line in f:
-                        if line.startswith("GEMINI_API_KEY="):
-                            os.environ["GEMINI_API_KEY"] = line.split("=", 1)[1].strip()
+        env_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                for line in f:
+                    if not line.strip() or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key and not os.environ.get(key):
+                            os.environ[key] = value
 
     def _bind(self):
         self.server_socket.bind((self.host, self.port))
