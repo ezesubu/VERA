@@ -29,3 +29,17 @@ class ToolRegistry:
 
     def to_anthropic(self) -> List[dict]:
         return [t.to_anthropic() for t in self._tools.values()]
+
+    def discover(self, package) -> None:
+        """Importa todos los módulos de `package` y registra cada subclase de Tool
+        definida en ellos (instanciada sin argumentos)."""
+        for _, modname, _ in pkgutil.iter_modules(package.__path__):
+            module = importlib.import_module(f"{package.__name__}.{modname}")
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                if (
+                    issubclass(obj, Tool)
+                    and obj is not Tool
+                    and obj.__module__ == module.__name__
+                ):
+                    self.register(obj())
+                    logger.info("[ToolRegistry] tool descubierta: %s", obj().name)

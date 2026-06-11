@@ -42,3 +42,13 @@ def test_to_anthropic_shape():
             "input_schema": {"type": "object", "properties": {}},
         }
     ]
+
+
+def test_discover_finds_run_ue_python():
+    import vera.agent.tools as tools_pkg
+
+    reg = ToolRegistry()
+    reg.discover(tools_pkg)
+    tool = reg.get("run_ue_python")
+    assert tool is not None
+    assert tool.destructive is True
