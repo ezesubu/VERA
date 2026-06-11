@@ -101,6 +101,9 @@ def send_vera_command(text, timeout=300.0, port=None):
             "events": [],
         }
     final = events[-1]
+    if final.get("type") != "final":
+        interrupted = "El backend cerró el stream sin un evento final (pipeline interrumpido)."
+        return {"status": "error", "msg": interrupted, "message": interrupted, "events": events}
     return {
         "status": final.get("status", "error"),
         "msg": final.get("msg", ""),

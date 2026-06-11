@@ -89,6 +89,7 @@ def send_json_stream(port, payload, timeout=DEFAULT_TIMEOUT, host="127.0.0.1", o
                     try:
                         on_event(event)
                     except Exception:
+                        # on_event es best-effort: un callback roto no debe abortar el stream
                         pass
                 if event.get("type") == "final":
                     return events

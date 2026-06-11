@@ -72,3 +72,45 @@ def test_send_vera_command_returns_final_with_events(streaming_backend):
     assert result["status"] == "success"
     assert result["msg"] == "Done."
     assert len(result["events"]) == 3
+
+
+@pytest.fixture
+def dying_backend():
+    """Backend que emite progreso y cierra SIN evento final (pipeline interrumpido)."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+    port = server.getsockname()[1]
+    stop = threading.Event()
+
+    def serve():
+        server.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except socket.timeout:
+                continue
+            with conn:
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                conn.sendall(
+                    (json.dumps({"type": "progress", "agent": "Manager", "msg": "routing"}) + "\n")
+                    .encode("utf-8"))
+                # cierra sin final
+
+    threading.Thread(target=serve, daemon=True).start()
+    yield port
+    stop.set()
+    server.close()
+
+
+def test_send_vera_command_stream_died_without_final(dying_backend):
+    result = send_vera_command("build", port=dying_backend)
+    assert result["status"] == "error"
+    assert "sin un evento final" in result["msg"]
+    assert result["events"][-1]["type"] == "progress"  # los parciales se conservan
