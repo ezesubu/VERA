@@ -228,3 +228,31 @@ def test_request_pide_thinking_summarized():
     AgentLoop(_reg(), client).run("x")
     kwargs = client.messages.calls[0]
     assert kwargs["thinking"] == {"type": "adaptive", "display": "summarized"}
+
+
+def test_excepcion_del_sdk_cierra_el_contrato():
+    """Una excepción del SDK (timeout, rate limit) debe emitir final y devolver error."""
+
+    class _ExplodingMessages:
+        def stream(self, **kwargs):
+            raise RuntimeError("conexión caída")
+
+    class _ExplodingClient:
+        messages = _ExplodingMessages()
+
+    events = []
+    out = AgentLoop(_reg(), _ExplodingClient()).run("hola", emit=events.append)
+    assert out["status"] == "error"
+    assert "conexión caída" in out["msg"]
+    assert events[-1]["type"] == "final"
+    assert events[-1]["status"] == "error"
+
+
+def test_thinking_vacio_no_se_emite():
+    """Un delta de thinking con string vacío no debe generar evento (display omitted)."""
+    client = FakeClient([
+        (_Resp("end_turn", [_Text("listo")]), [thinking_event("")]),
+    ])
+    events = []
+    AgentLoop(_reg(), client).run("x", emit=events.append)
+    assert [e for e in events if e.get("type") == "thinking"] == []

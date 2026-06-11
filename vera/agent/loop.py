@@ -31,7 +31,7 @@ class AgentLoop:
     """Corre el bucle: el modelo razona → elige tools → ve resultados → repite.
 
     `llm_client` es un cliente con forma de `anthropic.Anthropic`
-    (`.messages.create(...)`), inyectable para tests.
+    (`.messages.stream(...)`), inyectable para tests.
     `confirm(tool, args) -> bool` gatea tools destructivas; None = sin gate.
     """
 
@@ -58,7 +58,14 @@ class AgentLoop:
         tools = self.registry.to_anthropic()
 
         for _ in range(MAX_ITERATIONS):
-            resp = self._call_llm(messages, tools, emit)
+            try:
+                resp = self._call_llm(messages, tools, emit)
+            except Exception as e:  # APIError, timeout, red caída: cerrar el contrato igual
+                logger.exception("[AgentLoop] error de comunicación con el modelo")
+                msg = f"error de comunicación con el modelo: {e}"
+                if emit:
+                    emit({"type": "final", "status": "error", "msg": msg})
+                return {"status": "error", "msg": msg}
 
             if resp.stop_reason == "end_turn":
                 text = _final_text(resp.content)
