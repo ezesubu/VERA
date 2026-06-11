@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self' qrc:; object-src 'none'; base-uri 'none'">
 <link rel="stylesheet" href="vendor/github-dark.min.css">
 <link rel="stylesheet" href="chat.css">
 <style>#devbar{position:fixed;top:4px;right:4px;z-index:9}#devbar button{font-size:10px}</style>
@@ -20,6 +21,7 @@
 <div id="devbar"><button onclick="demo()">▶ demo</button></div>
 <script src="vendor/marked.min.js"></script>
 <script src="vendor/highlight.min.js"></script>
+<script src="vendor/purify.min.js"></script>
 <script src="chat.js"></script>
 <script>
 function demo() {

@@ -11,10 +11,15 @@ const $ = (id) => document.getElementById(id);
 function scrollBottom() { const c = $("chat"); c.scrollTop = c.scrollHeight; }
 
 function md(text) {
-  const html = marked.parse(text || "");
+  const raw = marked.parse(text || "");
+  const safe = DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["style", "iframe", "form", "object", "embed"],
+    FORBID_ATTR: ["onerror", "onload", "onclick", "style"],
+  });
   const div = document.createElement("div");
   div.className = "md";
-  div.innerHTML = html;
+  div.innerHTML = safe;
   div.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
   return div;
 }
@@ -35,16 +40,23 @@ function ensureTimeline() {
 function renderChips(working) {
   const chips = $("chips");
   chips.innerHTML = "";
-  for (const a of AGENTS.slice(0, 5)) {
+  let shown = AGENTS.slice(0, 5);
+  if (working && !shown.includes(working)) {
+    shown = shown.slice(0, 4).concat(working);  // garantiza que el agente activo se vea
+  }
+  for (const a of shown) {
     const s = document.createElement("span");
     s.className = "chip" + (a === working ? " working" : "");
     s.textContent = a + (a === working ? " ●" : "");
     chips.appendChild(s);
   }
-  const more = document.createElement("span");
-  more.className = "chip";
-  more.textContent = "+" + (AGENTS.length - 5);
-  chips.appendChild(more);
+  const hidden = AGENTS.length - shown.length;
+  if (hidden > 0) {
+    const more = document.createElement("span");
+    more.className = "chip";
+    more.textContent = "+" + hidden;
+    chips.appendChild(more);
+  }
 }
 
 // ---------- dispatch (único punto de entrada Python→JS) ----------
@@ -63,16 +75,20 @@ window.veraChat = {
           .forEach((el) => el.classList.remove("working"));
         const item = document.createElement("div");
         item.className = "tl-item working";
-        item.innerHTML = "<b>" + e.agent + "</b> — " + e.msg;
+        const b = document.createElement("b");
+        b.textContent = e.agent || "";
+        item.appendChild(b);
+        item.appendChild(document.createTextNode(" — " + (e.msg || "")));
         tl.appendChild(item);
         renderChips(e.agent);
         break;
       }
       case "image": {
+        const safePath = String(e.path || "");
         const img = document.createElement("img");
         img.className = "shot";
-        img.src = "file:///" + String(e.path).replace(/\\/g, "/");
-        img.onclick = () => pybridge && pybridge.open_image(e.path);
+        img.src = "file:///" + safePath.replace(/\\/g, "/");
+        img.onclick = () => pybridge && pybridge.open_image(safePath);
         ensureTimeline().appendChild(img);
         break;
       }
