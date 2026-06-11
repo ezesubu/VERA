@@ -71,6 +71,8 @@ window.veraChat = {
       }
       case "progress": {
         const tl = ensureTimeline();
+        tl.querySelectorAll(".tl-think.live")
+          .forEach((el) => el.classList.remove("live"));
         tl.querySelectorAll(".tl-item.working")
           .forEach((el) => el.classList.remove("working"));
         const item = document.createElement("div");
@@ -94,12 +96,61 @@ window.veraChat = {
       }
       case "final": {
         const tl = ensureTimeline();
+        tl.querySelectorAll(".tl-think.live")
+          .forEach((el) => el.classList.remove("live"));
         tl.querySelectorAll(".tl-item.working")
           .forEach((el) => el.classList.remove("working"));
         tl.appendChild(md(e.msg));
         if (e.status === "error") tl.classList.add("error");
         currentTimeline = null;
         renderChips(null);
+        break;
+      }
+      case "thinking": {
+        const tl = ensureTimeline();
+        let th = tl.querySelector(".tl-think.live");
+        if (!th) {
+          th = document.createElement("div");
+          th.className = "tl-item tl-think live";
+          const b = document.createElement("b");
+          b.textContent = "razonando";
+          th.appendChild(b);
+          th.appendChild(document.createTextNode(" — "));
+          tl.appendChild(th);
+        }
+        th.lastChild.textContent += e.msg || "";
+        break;
+      }
+      case "question": {
+        const tl = ensureTimeline();
+        const q = document.createElement("div");
+        q.className = "tl-item question";
+        const txt = document.createElement("div");
+        txt.textContent = e.msg || "VERA pide confirmación.";
+        q.appendChild(txt);
+        if (e.args_preview) {
+          const pre = document.createElement("pre");
+          pre.className = "q-args";
+          pre.textContent = e.args_preview;
+          q.appendChild(pre);
+        }
+        const yes = document.createElement("button");
+        yes.className = "q-btn approve";
+        yes.textContent = "Aprobar";
+        const no = document.createElement("button");
+        no.className = "q-btn deny";
+        no.textContent = "Rechazar";
+        const answer = (v) => {
+          yes.disabled = true;
+          no.disabled = true;
+          q.classList.add(v ? "approved" : "denied");
+          if (pybridge) pybridge.answer_question(v);
+        };
+        yes.onclick = () => answer(true);
+        no.onclick = () => answer(false);
+        q.appendChild(yes);
+        q.appendChild(no);
+        tl.appendChild(q);
         break;
       }
       case "error": {

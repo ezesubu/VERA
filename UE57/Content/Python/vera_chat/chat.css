@@ -52,3 +52,22 @@ body { display: flex; flex-direction: column; background: #0d1117; color: #c9d1d
 #mic.recording { color: #f85149; border-color: #f85149;
                  animation: pulse 1.1s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 10px #f8514966; } }
+
+/* --- thinking en vivo (Fase 1.5) --- */
+.tl-think { opacity: 0.65; font-style: italic; white-space: pre-wrap; }
+.tl-think.live::after { content: "▋"; animation: blink 1s step-start infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* --- pregunta del gate destructivo (Fase 1.5) --- */
+.tl-item.question { border-left: 3px solid #e0a030; padding-left: 8px; }
+.tl-item.question .q-args {
+  max-height: 120px; overflow: auto; font-size: 11px;
+  background: rgba(0, 0, 0, 0.25); padding: 6px; border-radius: 4px;
+}
+.q-btn { margin: 4px 6px 0 0; padding: 4px 14px; border-radius: 6px;
+         border: 1px solid transparent; cursor: pointer; }
+.q-btn.approve { background: #2e7d4f; color: #fff; }
+.q-btn.deny { background: #7d2e2e; color: #fff; }
+.q-btn:disabled { opacity: 0.45; cursor: default; }
+.tl-item.question.approved { border-left-color: #2e7d4f; }
+.tl-item.question.denied { border-left-color: #7d2e2e; }

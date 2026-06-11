@@ -2,6 +2,7 @@
 Fallback automático a la UI de burbujas si QtWebEngineWidgets no está disponible."""
 import json
 import os
+import queue
 import threading
 
 import unreal
@@ -40,6 +41,8 @@ STREAM_FINAL_TIMEOUT = 300.0
 
 _pending_events = []          # eventos del hilo lector → tick de Qt → JS (WebEngine)
 _pending_vera_responses = []  # respuestas del hilo fallback → tick de Qt → VeraChatWindow
+_answer_queue = queue.Queue()  # respuestas aprobar/denegar (JS → hilo lector del stream)
+CONFIRM_UI_TIMEOUT = 110.0     # menor que el timeout del server (120s)
 global_vera_window = None
 
 
@@ -81,6 +84,11 @@ class PyBridge(QObject):
     @Slot(str)
     def send_command(self, text):
         self._window.send_command(text)
+
+    @Slot(bool)
+    def answer_question(self, approve):
+        """El usuario tocó Aprobar/Rechazar en el chat (round-trip del gate)."""
+        _answer_queue.put(bool(approve))
 
     @Slot(str)
     def open_image(self, path):
@@ -162,6 +170,36 @@ class VeraWebWindow(QWidget):
     def _stream_command(self, text):
         import socket
         global _pending_events
+
+        # Fast keyword route: if it's about project analysis, use ProjectAnalyzer directly
+        lower_text = text.lower()
+        analyzer_kw = ["missing", "analyze", "analysis", "scan", "niagara", "acf", "gas",
+                       "what assets", "que falta", "assets are", "plugins", "installed",
+                       "detect", "check for", "falta", "tiene", "project has"]
+
+        if any(kw in lower_text for kw in analyzer_kw):
+            try:
+                _pending_events.append({"type": "progress", "agent": "Analyzer", "msg": "scanning project"})
+                import sys
+                sys.path.insert(0, "E:/PCW/VERA")
+                from vera.core.blackboard import Blackboard
+                from vera.core.project_analyzer_agent import ProjectAnalyzerAgent
+
+                bb = Blackboard()
+                analyzer = ProjectAnalyzerAgent(bb)
+                result = analyzer.analyze()
+
+                if result and result.get("summary"):
+                    _pending_events.append({"type": "final", "status": "success", "msg": result["summary"]})
+                else:
+                    _pending_events.append({"type": "final", "status": "error", "msg": "No se pudo analizar el proyecto."})
+                return
+            except Exception as e:
+                _pending_events.append({"type": "error", "msg": f"Analyzer error: {str(e)}"})
+                _pending_events.append({"type": "final", "status": "error", "msg": "Analysis failed"})
+                return
+
+        # Default: send to vera_server
         try:
             with socket.create_connection(BACKEND, timeout=STREAM_FINAL_TIMEOUT) as s:
                 s.settimeout(STREAM_FINAL_TIMEOUT)
@@ -180,6 +218,21 @@ class VeraWebWindow(QWidget):
                         try:
                             event = json.loads(line.decode("utf-8"))
                         except ValueError:
+                            continue
+                        if event.get("type") == "question":
+                            # Round-trip del gate destructivo: mostrar la pregunta
+                            # y esperar la decisión del usuario (botones en el chat).
+                            while not _answer_queue.empty():
+                                _answer_queue.get_nowait()  # descartar respuestas viejas
+                            _pending_events.append(event)
+                            try:
+                                approve = _answer_queue.get(timeout=CONFIRM_UI_TIMEOUT)
+                            except queue.Empty:
+                                approve = False
+                                _pending_events.append({
+                                    "type": "progress", "agent": "Gate",
+                                    "msg": "sin respuesta del usuario — acción denegada"})
+                            s.sendall((json.dumps({"approve": approve}) + "\n").encode("utf-8"))
                             continue
                         _pending_events.append(event)
                         if event.get("type") == "final":
