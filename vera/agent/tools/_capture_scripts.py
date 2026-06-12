@@ -38,7 +38,11 @@ else:
         cam_loc, cam_rot = ues.get_level_viewport_camera_info()
         st = types.ModuleType("vera_capture_state")
         st.hidden = []
-        st.cam = (cam_loc, cam_rot)
+        # copias eagerly: si UE devolviera referencias vivas, mover la camara
+        # durante la captura corromperia el restore
+        st.cam = (unreal.Vector(cam_loc.x, cam_loc.y, cam_loc.z),
+                  unreal.Rotator(roll=cam_rot.roll, pitch=cam_rot.pitch,
+                                 yaw=cam_rot.yaw))
         st.comp = comp
         st.prev_anim_mode = None
         # ocultar SOLO lo visible: lo que el usuario ya tenia oculto no es nuestro

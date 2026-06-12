@@ -55,3 +55,10 @@ def test_restore_idempotente_y_sin_tokens():
     assert "viewmode lit" in s
     assert "set_is_temporarily_hidden_in_editor" in s
     assert "__" not in s                 # sin tokens pendientes
+
+
+def test_setup_copia_la_camara_no_referencias():
+    # structs de UE pueden ser referencias vivas: el restore necesita copias
+    s = build_setup_script("X", None)
+    assert "unreal.Vector(cam_loc.x" in s
+    assert "unreal.Rotator(roll=cam_rot.roll" in s
