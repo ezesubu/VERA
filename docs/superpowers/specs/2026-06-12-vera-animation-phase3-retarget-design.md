@@ -13,8 +13,11 @@ de IK Rigs y Retargeters cuando no existen.
 - **Pilar:** retargeting (Sequencer y Control Rig quedan como fases futuras).
 - **Alcance:** auto-crear IK Rig + Retargeter cuando no existen (no solo usar
   los existentes). Red de seguridad: cada etapa falla honesto.
-- **Arquitectura: tools separadas (enfoque B, elegido por Ezequiel).** A
-  diferencia de la captura (fase 2), los productos intermedios son **assets
+- **Arquitectura: tools separadas (enfoque B, elegido por Ezequiel).** Racional
+  principal (de Ezequiel): **separación de concerns como producto** — cada tool
+  es un bloque consumible por sí solo; quien mañana necesite solo una etapa
+  (crear IK rigs en lote, batch-retargetear un pack) ya tiene su agente sin
+  cargar el pipeline entero. Además: los productos intermedios son **assets
   durables y reutilizables** (un IK Rig sirve para todos los retargets futuros
   de ese esqueleto) — no hay problema de restore, y gates separados dan
   visibilidad por asset creado. La composición es inteligencia del cerebro:
