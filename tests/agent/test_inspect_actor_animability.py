@@ -27,6 +27,8 @@ def test_skeletal_con_anims(monkeypatch):
         {"actor_name": "VERA_Manny"}, ToolContext(bridge_port=9878))
     assert res.is_error is False
     assert "SK_Mannequin" in res.content
+    assert "MM_Idle" in res.content
+    assert "total_compatible_anims" in res.content
     assert captured["port"] == 9878
     assert '"VERA_Manny"' in captured["script"]
 

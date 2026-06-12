@@ -231,3 +231,9 @@ def parse_json_output(output):
             except ValueError:
                 return None
     return None
+
+
+def tail_of_output(output, limit: int = 500) -> str:
+    """Cola del output crudo del editor, acotada para no inflar el contexto."""
+    text = str(output or "")
+    return text[-limit:] if len(text) > limit else text

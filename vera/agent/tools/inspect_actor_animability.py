@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from vera.agent.tool import Tool, ToolContext, ToolResult
-from vera.agent.tools._anim_scripts import build_inspect_script, parse_json_output
+from vera.agent.tools._anim_scripts import build_inspect_script, parse_json_output, tail_of_output
 from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 
 
@@ -49,7 +49,8 @@ class InspectActorAnimabilityTool(Tool):
         data = parse_json_output(resp.get("output"))
         if data is None:
             return ToolResult(
-                f"respuesta no parseable del editor:\n{resp.get('output')}", is_error=True)
+                f"respuesta no parseable del editor:\n{tail_of_output(resp.get('output'))}",
+                is_error=True)
         if data.get("error") == "not_found":
             cands = ", ".join(data.get("candidates") or []) or "(sin actores en el nivel)"
             return ToolResult(

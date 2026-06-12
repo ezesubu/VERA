@@ -19,7 +19,7 @@ import json
 
 from vera.agent.tool import Tool, ToolContext, ToolResult
 from vera.agent.tools._anim_scripts import (
-    build_animate_script, build_spawn_script, parse_json_output)
+    build_animate_script, build_spawn_script, parse_json_output, tail_of_output)
 from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 
 
@@ -95,15 +95,9 @@ class AnimateActorTool(Tool):
         data = parse_json_output(resp.get("output"))
         if data is None:
             return ToolResult(
-                f"respuesta no parseable del editor:\n{_tail(resp.get('output'))}",
+                f"respuesta no parseable del editor:\n{tail_of_output(resp.get('output'))}",
                 is_error=True)
         rendered = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
         if data.get("error") and not data.get("strategy_used"):
             return ToolResult(rendered, is_error=True)
         return ToolResult(rendered)
-
-
-def _tail(output, limit=500):
-    """Cola del output crudo del editor, acotada para no inflar el contexto."""
-    text = str(output or "")
-    return text[-limit:] if len(text) > limit else text
