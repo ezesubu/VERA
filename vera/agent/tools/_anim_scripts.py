@@ -81,6 +81,13 @@ def _pick_and_play(comp, info, anim_req, looping, out):
         return False
     anim = unreal.load_asset(path)
     comp.set_animation_mode(unreal.AnimationMode.ANIMATION_SINGLE_NODE)
+    try:
+        # en el mundo del editor los skeletal meshes no tickean animacion
+        # sin este flag (verificado en vivo, UE 5.7); requiere ademas
+        # viewport en Realtime y editor con foco
+        comp.set_update_animation_in_editor(True)
+    except Exception:
+        pass
     comp.play_animation(anim, looping)
     out["animation"] = name
     out["looping"] = looping

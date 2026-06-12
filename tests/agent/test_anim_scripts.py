@@ -25,6 +25,12 @@ def test_animate_script_inyecta_parametros():
         assert token not in s
 
 
+def test_play_habilita_update_de_animacion_en_editor():
+    # sin este flag el skeletal mesh no tickea en el mundo del editor (UE 5.7)
+    assert "set_update_animation_in_editor" in build_animate_script("Bot")
+    assert "set_update_animation_in_editor" in build_spawn_script()
+
+
 def test_spawn_script_con_location():
     s = build_spawn_script("auto", True, [100.0, 200.0, 90.0])
     assert "location = [100.0, 200.0, 90.0]" in s
