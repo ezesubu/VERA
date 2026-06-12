@@ -70,9 +70,10 @@ def _pick_and_play(comp, info, anim_req, looping, out):
     name = anim_req
     if anim_req == "auto":
         names = info["compatible_anims"]
-        name = next((n for n in names if "idle" in n.lower()),
-                    next((n for n in names if "walk" in n.lower()),
-                         names[0] if names else None))
+        # nombre mas corto primero: MM_Idle le gana a MF_Pistol_Idle_ADS
+        idles = sorted((n for n in names if "idle" in n.lower()), key=len)
+        walks = sorted((n for n in names if "walk" in n.lower()), key=len)
+        name = (idles + walks + list(names))[0] if names else None
     path = info["anim_paths"].get(name) if name else None
     if path is None:
         out["error"] = "anim_not_compatible"
@@ -154,7 +155,8 @@ else:
             mod.handle = unreal.register_slate_post_tick_callback(mod.tick)
             sys.modules["vera_proc_anim"] = mod
         mod.targets[info["actor"]] = {"actor": actor,
-                                      "base": actor.get_actor_location(), "t": 0.0}
+                                      "base": actor.get_actor_location(),
+                                      "base_rot": actor.get_actor_rotation(), "t": 0.0}
         out["strategy_used"] = "procedural"
         out["detail"] = "rotacion + bobbing via slate post tick (modulo vera_proc_anim)"
     else:
@@ -182,13 +184,30 @@ else:
         fwd = unreal.MathLibrary.get_forward_vector(cam_rot)
         location = [cam_loc.x + fwd.x * 400.0, cam_loc.y + fwd.y * 400.0, cam_loc.z]
         rot = unreal.Rotator(roll=0.0, pitch=0.0, yaw=cam_rot.yaw + 180.0)
+        # aterrizar el spawn: sin esto queda flotando a la altura de la camara
+        hit = unreal.SystemLibrary.line_trace_single(
+            ues.get_editor_world(),
+            unreal.Vector(location[0], location[1], location[2] + 200.0),
+            unreal.Vector(location[0], location[1], location[2] - 10000.0),
+            unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, False, [],
+            unreal.DrawDebugTrace.NONE, True)
+        if hit:
+            # HitResult no expone .location en 5.7: el Vector esta en to_tuple()[4]
+            location[2] = hit.to_tuple()[4].z + 2.0
     eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     actor = eas.spawn_actor_from_class(
         unreal.SkeletalMeshActor,
         unreal.Vector(location[0], location[1], location[2]), rot)
     comp = actor.get_editor_property("skeletal_mesh_component")
     comp.set_skeletal_mesh_asset(mesh)
-    actor.set_actor_label("VERA_Manny")
+    # set_actor_label no uniquifica: sin esto, dos spawns comparten label y
+    # animate/stop posteriores apuntan al actor equivocado
+    labels = {a.get_actor_label() for a in eas.get_all_level_actors()}
+    label, i = "VERA_Manny", 1
+    while label in labels:
+        i += 1
+        label = "VERA_Manny_%d" % i
+    actor.set_actor_label(label)
     tags = list(actor.get_editor_property("tags"))
     tags.append("VERA_SPAWNED")
     actor.set_editor_property("tags", tags)
@@ -203,8 +222,44 @@ else:
 '''
 
 
+_STOP_TEMPLATE = _COMMON + '''
+import sys
+label = __LABEL__
+actor, actors = _find_actor(label)
+if actor is None:
+    print(json.dumps({"error": "not_found", "actor": label,
+                      "candidates": _candidates(actors, label)}, sort_keys=True))
+else:
+    out = {"actor": actor.get_actor_label(), "stopped": [], "strategy_used": None}
+    mod = sys.modules.get("vera_proc_anim")
+    if mod is not None:
+        st = mod.targets.pop(actor.get_actor_label(), None)
+        if st:
+            actor.set_actor_location(st["base"], False, False)
+            if st.get("base_rot") is not None:
+                actor.set_actor_rotation(st["base_rot"], False)
+            out["stopped"].append("procedural")
+    comps = list(actor.get_components_by_class(unreal.SkeletalMeshComponent))
+    if comps:
+        comp = comps[0]
+        if "SINGLE_NODE" in str(comp.get_editor_property("animation_mode")):
+            comp.stop()
+            if comp.get_editor_property("anim_class"):
+                comp.set_animation_mode(unreal.AnimationMode.ANIMATION_BLUEPRINT)
+                out["stopped"].append("single_node->animation_blueprint")
+            else:
+                out["stopped"].append("single_node")
+    out["strategy_used"] = "stopped" if out["stopped"] else "nothing_to_stop"
+    print(json.dumps(out, sort_keys=True))
+'''
+
+
 def build_inspect_script(actor_name: str) -> str:
     return _INSPECT_TEMPLATE.replace("__LABEL__", json.dumps(actor_name))
+
+
+def build_stop_script(actor_name: str) -> str:
+    return _STOP_TEMPLATE.replace("__LABEL__", json.dumps(actor_name))
 
 
 def build_animate_script(actor_name: str, animation: str = "auto",

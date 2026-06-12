@@ -3,6 +3,7 @@ from vera.agent.tools._anim_scripts import (
     build_inspect_script,
     build_animate_script,
     build_spawn_script,
+    build_stop_script,
     parse_json_output,
     tail_of_output,
 )
@@ -61,3 +62,35 @@ def test_tail_of_output_acota_y_tolera_none():
     assert tail_of_output("corto") == "corto"
     assert tail_of_output("a" * 600) == "a" * 500
     assert tail_of_output("abcdef", limit=3) == "def"
+
+
+def test_stop_script_detiene_y_restaura():
+    s = build_stop_script("Enemy_CyberHead")
+    assert '"Enemy_CyberHead"' in s
+    assert "vera_proc_anim" in s            # detiene el tick procedural
+    assert "base_rot" in s                  # restaura la rotación original
+    assert "ANIMATION_BLUEPRINT" in s       # devuelve el control al ABP si existe
+    assert "__LABEL__" not in s
+
+
+def test_animate_procedural_guarda_rotacion_base():
+    # sin base_rot el stop no puede restaurar la orientación original
+    assert "base_rot" in build_animate_script("X", allow_procedural=True)
+
+
+def test_auto_prefiere_el_idle_mas_corto():
+    # MM_Idle debe ganarle a MF_Pistol_Idle_ADS: orden por longitud de nombre
+    assert "key=len" in build_animate_script("X")
+
+
+def test_spawn_sin_location_tracea_al_piso():
+    s = build_spawn_script("auto", True, None)
+    assert "line_trace_single" in s
+    assert "to_tuple()[4]" in s             # HitResult.location no existe en 5.7
+
+
+def test_spawn_uniquifica_el_label():
+    # set_actor_label NO uniquifica en UE: dos spawns = dos "VERA_Manny" y el
+    # stop/animate posterior apunta al equivocado (encontrado en vivo)
+    s = build_spawn_script()
+    assert "while label in labels" in s

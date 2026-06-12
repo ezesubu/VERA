@@ -147,3 +147,27 @@ def test_output_no_parseable_capea_el_eco(monkeypatch):
     assert res.is_error is True
     assert "x" * 500 in res.content
     assert "x" * 501 not in res.content   # eco acotado por tail_of_output
+
+
+def test_stop_detiene_y_restaura(monkeypatch):
+    captured = {}
+
+    def fake_send(port, payload, *a, **k):
+        captured["script"] = payload["script"]
+        return _ok({"actor": "Enemy_CyberHead", "stopped": ["procedural"],
+                    "strategy_used": "stopped"})
+
+    monkeypatch.setattr(mod, "send_json", fake_send)
+    res = AnimateActorTool().execute(
+        {"action": "stop", "actor_name": "Enemy_CyberHead"}, ToolContext())
+    assert res.is_error is False
+    assert "stopped" in res.content
+    assert "vera_proc_anim" in captured["script"]
+
+
+def test_stop_requiere_actor_name(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("no debe llamar al bridge")
+    monkeypatch.setattr(mod, "send_json", boom)
+    res = AnimateActorTool().execute({"action": "stop"}, ToolContext())
+    assert res.is_error is True

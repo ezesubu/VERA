@@ -6,7 +6,10 @@
   procedural (static + allow_procedural=true), o reporte honesto not_animable
   (resultado válido, NO error).
 - spawn: SkeletalMeshActor con SKM_Manny_Simple, taggeado VERA_SPAWNED,
-  default frente a la cámara del editor.
+  default frente a la cámara del editor, aterrizado al piso por line trace.
+- stop: detiene lo que VERA puso en movimiento — el tick procedural (restaurando
+  posición y rotación originales) y/o el playback single-node (devolviendo el
+  control al AnimBlueprint si el componente tiene uno).
 
 Regla de error: is_error=True solo si el sistema falló o el pedido fue
 imposible SIN efectos (data tiene "error" y NO tiene strategy_used). Si el
@@ -19,7 +22,8 @@ import json
 
 from vera.agent.tool import Tool, ToolContext, ToolResult
 from vera.agent.tools._anim_scripts import (
-    build_animate_script, build_spawn_script, parse_json_output, tail_of_output)
+    build_animate_script, build_spawn_script, build_stop_script,
+    parse_json_output, tail_of_output)
 from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 
 
@@ -27,18 +31,20 @@ class AnimateActorTool(Tool):
     name = "animate_actor"
     description = (
         "Anima un actor del nivel (action=animate) o spawnea un personaje Manny "
-        "animado (action=spawn). Skeletal: reproduce una AnimSequence compatible "
-        "('auto' elige idle/walk). Static: solo movimiento procedural si "
-        "allow_procedural=true; si no, explica por qué no es animable. "
-        "Modifica el nivel: requiere confirmación."
+        "animado (action=spawn), o detiene una animación que VERA inició "
+        "(action=stop: corta el movimiento procedural restaurando la pose original "
+        "y devuelve el control al AnimBlueprint). Skeletal: reproduce una "
+        "AnimSequence compatible ('auto' elige idle/walk). Static: solo movimiento "
+        "procedural si allow_procedural=true; si no, explica por qué no es "
+        "animable. Modifica el nivel: requiere confirmación."
     )
     input_schema = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["animate", "spawn"]},
+            "action": {"type": "string", "enum": ["animate", "spawn", "stop"]},
             "actor_name": {
                 "type": "string",
-                "description": "label del actor (requerido si action=animate)",
+                "description": "label del actor (requerido si action=animate o stop)",
             },
             "animation": {
                 "type": "string",
@@ -82,9 +88,16 @@ class AnimateActorTool(Tool):
                 return ToolResult("location debe ser [x, y, z]", is_error=True)
             ctx.report("AnimateActor", f"spawneando Manny animado ({animation})")
             script = build_spawn_script(animation, looping, location)
+        elif action == "stop":
+            actor_name = (args.get("actor_name") or "").strip()
+            if not actor_name:
+                return ToolResult("action=stop requiere actor_name", is_error=True)
+            ctx.report("AnimateActor", f"deteniendo animación de {actor_name!r}")
+            script = build_stop_script(actor_name)
         else:
             return ToolResult(
-                f"action inválida: {action!r} (usar 'animate' o 'spawn')", is_error=True)
+                f"action inválida: {action!r} (usar 'animate', 'spawn' o 'stop')",
+                is_error=True)
 
         try:
             resp = send_json(ctx.bridge_port, {"script": script})
