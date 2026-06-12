@@ -62,7 +62,8 @@ Este es el plan de acción autónomo para llevar a VERA de un script de Python a
 - **Fase 1 (implementada 2026-06-12):** tools `inspect_actor_animability` (read-only)
   y `animate_actor` (destructiva: animate/spawn). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase1-design.md`.
-- **Fase 2 (pendiente):** percepción de animación — `isolate_and_capture` con entorno
-  neutro (patrón S.A.M) para que el art_critic juzgue animaciones.
+- **Fase 2 (implementada 2026-06-12):** percepción visual — tool `capture_actor`
+  (aislamiento + unlit + scrub/órbita determinísticos, restore garantizado). Spec:
+  `docs/superpowers/specs/2026-06-12-vera-animation-phase2-capture-design.md`.
 - **Fase 3 (pendiente, condicional):** Sequencer / Control Rig / retargeting, solo si
   las fases 1-2 se validan en vivo.
