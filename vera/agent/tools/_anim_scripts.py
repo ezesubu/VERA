@@ -66,14 +66,17 @@ def _diagnose(actor):
         info["notes"] = "static mesh: sin esqueleto, no admite AnimSequence"
     return info, comp
 
+def _pick_name(info, anim_req):
+    if anim_req != "auto":
+        return anim_req if anim_req in info["anim_paths"] else None
+    names = info["compatible_anims"]
+    # nombre mas corto primero: MM_Idle le gana a MF_Pistol_Idle_ADS
+    idles = sorted((n for n in names if "idle" in n.lower()), key=len)
+    walks = sorted((n for n in names if "walk" in n.lower()), key=len)
+    return (idles + walks + list(names))[0] if names else None
+
 def _pick_and_play(comp, info, anim_req, looping, out):
-    name = anim_req
-    if anim_req == "auto":
-        names = info["compatible_anims"]
-        # nombre mas corto primero: MM_Idle le gana a MF_Pistol_Idle_ADS
-        idles = sorted((n for n in names if "idle" in n.lower()), key=len)
-        walks = sorted((n for n in names if "walk" in n.lower()), key=len)
-        name = (idles + walks + list(names))[0] if names else None
+    name = _pick_name(info, anim_req)
     path = info["anim_paths"].get(name) if name else None
     if path is None:
         out["error"] = "anim_not_compatible"

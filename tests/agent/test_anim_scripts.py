@@ -94,3 +94,10 @@ def test_spawn_uniquifica_el_label():
     # stop/animate posterior apunta al equivocado (encontrado en vivo)
     s = build_spawn_script()
     assert "while label in labels" in s
+
+
+def test_common_expone_pick_name_separado_del_play():
+    # capture_actor necesita resolver la anim ANTES de mutar el nivel
+    s = build_animate_script("X")
+    assert "def _pick_name" in s
+    assert "_pick_name(info, anim_req)" in s
