@@ -4,6 +4,7 @@ from vera.agent.tools._anim_scripts import (
     build_animate_script,
     build_spawn_script,
     parse_json_output,
+    tail_of_output,
 )
 
 
@@ -47,3 +48,10 @@ def test_parse_json_output_invalido_devuelve_none():
     assert parse_json_output("sin json") is None
     assert parse_json_output("") is None
     assert parse_json_output(None) is None
+
+
+def test_tail_of_output_acota_y_tolera_none():
+    assert tail_of_output(None) == ""
+    assert tail_of_output("corto") == "corto"
+    assert tail_of_output("a" * 600) == "a" * 500
+    assert tail_of_output("abcdef", limit=3) == "def"

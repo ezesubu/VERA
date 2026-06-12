@@ -128,3 +128,22 @@ def test_bridge_caido(monkeypatch):
         {"action": "animate", "actor_name": "X"}, ToolContext())
     assert res.is_error is True
     assert "editor cerrado" in res.content
+
+
+def test_error_del_editor(monkeypatch):
+    monkeypatch.setattr(mod, "send_json",
+                        lambda *a, **k: {"success": False, "error": "boom interno"})
+    res = AnimateActorTool().execute(
+        {"action": "animate", "actor_name": "X"}, ToolContext())
+    assert res.is_error is True
+    assert "boom interno" in res.content
+
+
+def test_output_no_parseable_capea_el_eco(monkeypatch):
+    monkeypatch.setattr(mod, "send_json",
+                        lambda *a, **k: {"success": True, "output": "x" * 2000})
+    res = AnimateActorTool().execute(
+        {"action": "animate", "actor_name": "X"}, ToolContext())
+    assert res.is_error is True
+    assert "x" * 500 in res.content
+    assert "x" * 501 not in res.content   # eco acotado por tail_of_output
