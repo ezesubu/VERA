@@ -1,7 +1,8 @@
 # tests/agent/test_capture_scripts.py
 from vera.agent.tools._capture_scripts import (
     build_setup_script,
-    build_frame_script,
+    build_pose_script,
+    build_capture_script,
     build_restore_script,
 )
 
@@ -44,20 +45,35 @@ def test_setup_reporta_no_anims_para_nombre_invalido():
     assert '"no_anims"' in s
 
 
-def test_frame_anim_scrubea():
-    s = build_frame_script("anim", 0.75, "vera_cap_ab_0.png")
+def test_pose_anim_scrubea_sin_capturar():
+    # pose y captura van en round-trips SEPARADOS: capture_scene en el mismo
+    # call stack veria la pose anterior (la evaluacion ocurre entre ticks)
+    s = build_pose_script("anim", 0.75)
     assert "set_position" in s
     assert "0.75" in s
-    assert '"vera_cap_ab_0.png"' in s
-    assert "capture_scene" in s
-    assert "export_render_target" in s
+    assert "capture_scene" not in s
 
 
-def test_frame_orbit_mueve_el_rig():
-    s = build_frame_script("orbit", 180.0, "f.png")
+def test_pose_orbit_mueve_el_rig():
+    s = build_pose_script("orbit", 180.0)
     assert "find_look_at_rotation" in s
     assert "180.0" in s
     assert "set_position" in s              # mismo template, rama por modo
+
+
+def test_capture_solo_captura():
+    s = build_capture_script("vera_cap_ab_0.png")
+    assert '"vera_cap_ab_0.png"' in s
+    assert "capture_scene" in s
+    assert "export_render_target" in s
+    assert "set_position" not in s
+    assert "__FILENAME__" not in s
+
+
+def test_setup_anim_fuerza_tick_de_pose():
+    # sin ALWAYS_TICK, los skel comps solo evaluan pose cuando son renderizados
+    s = build_setup_script("X", "MM_Idle")
+    assert "ALWAYS_TICK_POSE_AND_REFRESH_BONES" in s
 
 
 def test_restore_idempotente_destruye_el_rig():
@@ -65,4 +81,5 @@ def test_restore_idempotente_destruye_el_rig():
     assert "sys.modules.pop" in s            # consumir el estado = idempotente
     assert "destroy_actor" in s
     assert "set_animation_mode" in s         # devuelve el modo previo del actor
+    assert "visibility_based_anim_tick_option" in s   # revierte el tick option
     assert "__" not in s                     # sin tokens pendientes

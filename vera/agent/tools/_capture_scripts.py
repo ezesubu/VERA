@@ -50,6 +50,12 @@ else:
 
         if anim_name is not None:
             st.prev_anim_mode = comp.get_editor_property("animation_mode")
+            # sin ALWAYS_TICK los skel comps solo evaluan pose al ser
+            # renderizados; guardamos la opcion previa para revertirla
+            st.prev_tick_option = comp.get_editor_property(
+                "visibility_based_anim_tick_option")
+            comp.set_editor_property("visibility_based_anim_tick_option",
+                unreal.VisibilityBasedAnimTickOption.ALWAYS_TICK_POSE_AND_REFRESH_BONES)
             picked = {}
             _pick_and_play(comp, info, anim_name, True, picked)
             out["animation"] = picked.get("animation")
@@ -84,11 +90,10 @@ else:
         print(json.dumps(out, sort_keys=True))
 '''
 
-_FRAME_TEMPLATE = '''
+_POSE_TEMPLATE = '''
 import unreal, json, sys, math
 mode = __MODE__
 value = __VALUE__
-filename = __FILENAME__
 
 st = sys.modules.get("vera_capture_state")
 if st is None:
@@ -106,12 +111,23 @@ else:
         inst = st.comp.get_anim_instance()
         if inst is not None:
             inst.set_position(value, False)
+    print(json.dumps({"ok": True, "mode": mode, "value": value}, sort_keys=True))
+'''
+
+_CAPTURE_TEMPLATE = '''
+import unreal, json, sys
+filename = __FILENAME__
+
+st = sys.modules.get("vera_capture_state")
+if st is None:
+    print(json.dumps({"error": "no_state"}, sort_keys=True))
+else:
     ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
     cap = st.rig.get_editor_property("capture_component2d")
     cap.capture_scene()
     unreal.RenderingLibrary.export_render_target(
         ues.get_editor_world(), st.rt, st.shot_dir, filename)
-    print(json.dumps({"ok": True, "mode": mode, "value": value}, sort_keys=True))
+    print(json.dumps({"ok": True, "file": filename}, sort_keys=True))
 '''
 
 _RESTORE_TEMPLATE = '''
@@ -131,6 +147,9 @@ else:
         if st.prev_anim_mode is not None and st.comp is not None:
             st.comp.stop()
             st.comp.set_animation_mode(st.prev_anim_mode)
+            if getattr(st, "prev_tick_option", None) is not None:
+                st.comp.set_editor_property(
+                    "visibility_based_anim_tick_option", st.prev_tick_option)
     except Exception as e:
         errors.append(str(e))
     print(json.dumps({"restored": not errors, "rig_destroyed": True,
@@ -146,11 +165,16 @@ def build_setup_script(actor_name: str, animation) -> str:
             .replace("__ANIM__", anim_literal))
 
 
-def build_frame_script(mode: str, value: float, filename: str) -> str:
-    return (_FRAME_TEMPLATE
+def build_pose_script(mode: str, value: float) -> str:
+    """Solo posa (scrub o mover el rig). La captura va en OTRO round-trip:
+    capture_scene en el mismo call stack veria la pose anterior."""
+    return (_POSE_TEMPLATE
             .replace("__MODE__", json.dumps(mode))
-            .replace("__VALUE__", repr(float(value)))
-            .replace("__FILENAME__", json.dumps(filename)))
+            .replace("__VALUE__", repr(float(value))))
+
+
+def build_capture_script(filename: str) -> str:
+    return _CAPTURE_TEMPLATE.replace("__FILENAME__", json.dumps(filename))
 
 
 def build_restore_script() -> str:

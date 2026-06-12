@@ -18,7 +18,8 @@ import uuid
 from vera.agent.tool import Tool, ToolContext, ToolResult, image_block
 from vera.agent.tools._anim_scripts import parse_json_output, tail_of_output
 from vera.agent.tools._capture_scripts import (
-    build_setup_script, build_frame_script, build_restore_script)
+    build_setup_script, build_pose_script, build_capture_script,
+    build_restore_script)
 from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 
 MAX_FRAMES = 6
@@ -110,7 +111,17 @@ class CaptureActorTool(Tool):
             for i, value in enumerate(values):
                 fname = f"vera_cap_{nonce}_{i}.png"
                 ctx.report("CaptureActor", f"frame {i + 1}/{len(values)}")
-                frame = self._send(ctx, build_frame_script(mode, value, fname))
+                # pose y captura en round-trips separados: el editor evalua la
+                # pose entre mensajes; capturar en el mismo call stack veria
+                # la pose anterior (off-by-one, hallado en E2E vivo)
+                pose = self._send(ctx, build_pose_script(mode, value))
+                if isinstance(pose, ToolResult):
+                    warnings.append(f"frame {i} (pose): {pose.content}")
+                    break
+                if pose.get("error"):
+                    warnings.append(f"frame {i} (pose): {pose['error']}")
+                    break
+                frame = self._send(ctx, build_capture_script(fname))
                 if isinstance(frame, ToolResult):
                     warnings.append(f"frame {i}: {frame.content}")
                     break

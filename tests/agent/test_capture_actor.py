@@ -35,13 +35,15 @@ class FakeBridge:
         self.scripts.append(s)
         if "sys.modules.pop" in s:                      # restore
             return {"success": True, "output": json.dumps(self.restore)}
-        if "capture_scene" in s:             # frame
+        if "capture_scene" in s:                        # captura (2do round-trip)
             self.frame_count += 1
             if self.frame_fail_at == self.frame_count:
                 return {"success": False, "error": "boom en el frame"}
             m = re.search(r"vera_cap_[0-9a-f]+_\d+\.png", s)
             if self.write_files and m:
                 (self.tmp / m.group(0)).write_bytes(b"PNGDATA")
+            return {"success": True, "output": json.dumps({"ok": True})}
+        if "set_position" in s:                         # pose (1er round-trip)
             return {"success": True, "output": json.dumps({"ok": True})}
         return {"success": True, "output": json.dumps(self.setup)}   # setup
 
@@ -52,7 +54,9 @@ class FakeBridge:
             if "sys.modules.pop" in s:
                 out.append("restore")
             elif "capture_scene" in s:
-                out.append("frame")
+                out.append("capture")
+            elif "set_position" in s:
+                out.append("pose")
             else:
                 out.append("setup")
         return out
@@ -74,7 +78,7 @@ def test_orbit_feliz(monkeypatch, tmp_path):
     res = CaptureActorTool().execute(
         {"actor_name": "VERA_Manny", "frames": 2}, ToolContext())
     assert res.is_error is False
-    assert bridge.kinds == ["setup", "frame", "frame", "restore"]
+    assert bridge.kinds == ["setup", "pose", "capture", "pose", "capture", "restore"]
     assert isinstance(res.content, list)
     meta = json.loads(res.content[0]["text"])
     assert meta["mode"] == "orbit"
