@@ -4,8 +4,8 @@
 "A por fuera, C por dentro": una sola llamada con restore garantizado; adentro
 scripts separados setup/frame/restore orquestados acá. El restore viaja en un
 finally del lado cliente: aunque un frame falle, el nivel vuelve a su estado.
-Un screenshot por round-trip: take_high_res_screenshot es asíncrona y encolar
-N capturas con N poses en un script tiene ordering azaroso.
+Captura vía SceneCapture2D (render a demanda, funciona con el editor minimizado);
+aislamiento por lista show-only — el nivel no se toca.
 """
 from __future__ import annotations
 
@@ -130,7 +130,7 @@ class CaptureActorTool(Tool):
         meta = {
             "actor": setup.get("actor"), "mode": mode,
             "frames_capturados": len(images), "files": files,
-            "hidden_actors": setup.get("hidden_actors"),
+            "isolation": setup.get("isolation"),
             "restored": bool(restore_info.get("restored")),
         }
         if mode == "anim":

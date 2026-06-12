@@ -1,10 +1,12 @@
 # vera/agent/tools/_capture_scripts.py
 """Builders de scripts curados para capture_actor (percepción visual).
 
-Internals "estilo C": setup / frame / restore separados, orquestados por la
-tool con restore garantizado. El estado de la sesión vive en
-sys.modules["vera_capture_state"] DEL EDITOR, así el restore es idempotente
-(pop) y no depende del proceso cliente. Mismas reglas que _anim_scripts:
+Captura vía SceneCapture2D + RenderTarget: renderiza a demanda sin depender
+del viewport (funciona con el editor minimizado/throttleado — verificado en
+vivo; take_high_res_screenshot NO). Aislamiento quirúrgico con la lista
+show-only del capture component: no se oculta ni se toca NADA del nivel.
+El estado de la sesión vive en sys.modules["vera_capture_state"] DEL EDITOR,
+así el restore es idempotente (pop). Mismas reglas que _anim_scripts:
 inyección por tokens __X__ con json.dumps/repr y JSON compacto de una línea.
 """
 from __future__ import annotations
@@ -35,31 +37,15 @@ else:
                          sort_keys=True))
     else:
         ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-        cam_loc, cam_rot = ues.get_level_viewport_camera_info()
+        world = ues.get_editor_world()
+        eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
         st = types.ModuleType("vera_capture_state")
-        st.hidden = []
-        # copias eagerly: si UE devolviera referencias vivas, mover la camara
-        # durante la captura corromperia el restore
-        st.cam = (unreal.Vector(cam_loc.x, cam_loc.y, cam_loc.z),
-                  unreal.Rotator(roll=cam_rot.roll, pitch=cam_rot.pitch,
-                                 yaw=cam_rot.yaw))
         st.comp = comp
         st.prev_anim_mode = None
-        # ocultar SOLO lo visible: lo que el usuario ya tenia oculto no es nuestro
-        for a in actors:
-            if a is actor:
-                continue
-            try:
-                if not a.is_temporarily_hidden_in_editor():
-                    a.set_is_temporarily_hidden_in_editor(True)
-                    st.hidden.append(a)
-            except Exception:
-                pass
-        world = ues.get_editor_world()
-        unreal.SystemLibrary.execute_console_command(world, "viewmode unlit")
+        st.shot_dir = unreal.Paths.screen_shot_dir()
 
-        out = {"actor": info["actor"], "hidden_actors": len(st.hidden),
-               "screenshot_dir": unreal.Paths.screen_shot_dir(),
+        out = {"actor": info["actor"], "isolation": "show_only_list",
+               "screenshot_dir": st.shot_dir,
                "animation": None, "anim_length": None}
 
         if anim_name is not None:
@@ -79,7 +65,21 @@ else:
         cam = unreal.Vector(origin.x + math.cos(rad) * st.dist,
                             origin.y + math.sin(rad) * st.dist, st.cam_z)
         look = unreal.MathLibrary.find_look_at_rotation(cam, origin)
-        ues.set_level_viewport_camera_info(cam, look)
+        rig = eas.spawn_actor_from_class(unreal.SceneCapture2D, cam, look)
+        rig.set_actor_label("VERA_CaptureRig")
+        cap = rig.get_editor_property("capture_component2d")
+        rt = unreal.RenderingLibrary.create_render_target2d(
+            world, 640, 360, unreal.TextureRenderTargetFormat.RTF_RGBA8)
+        cap.set_editor_property("texture_target", rt)
+        # SCS_BASE_COLOR rinde blanco inutil en 5.7: usar FINAL_COLOR_LDR
+        cap.set_editor_property("capture_source",
+                                unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR)
+        # la property show_only_actors no es editable ("templates"): usar el setter
+        cap.set_editor_property("primitive_render_mode",
+            unreal.SceneCapturePrimitiveRenderMode.PRM_USE_SHOW_ONLY_LIST)
+        cap.show_only_actor_components(actor, True)
+        st.rig = rig
+        st.rt = rt
         sys.modules["vera_capture_state"] = st
         print(json.dumps(out, sort_keys=True))
 '''
@@ -95,18 +95,22 @@ if st is None:
     print(json.dumps({"error": "no_state"}, sort_keys=True))
 else:
     if mode == "orbit":
-        ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
         rad = math.radians(value)
         cam = unreal.Vector(st.origin[0] + math.cos(rad) * st.dist,
                             st.origin[1] + math.sin(rad) * st.dist, st.cam_z)
         target = unreal.Vector(st.origin[0], st.origin[1], st.origin[2])
         look = unreal.MathLibrary.find_look_at_rotation(cam, target)
-        ues.set_level_viewport_camera_info(cam, look)
+        st.rig.set_actor_location(cam, False, False)
+        st.rig.set_actor_rotation(look, False)
     else:
         inst = st.comp.get_anim_instance()
         if inst is not None:
             inst.set_position(value, False)
-    unreal.AutomationLibrary.take_high_res_screenshot(640, 360, filename)
+    ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+    cap = st.rig.get_editor_property("capture_component2d")
+    cap.capture_scene()
+    unreal.RenderingLibrary.export_render_target(
+        ues.get_editor_world(), st.rt, st.shot_dir, filename)
     print(json.dumps({"ok": True, "mode": mode, "value": value}, sort_keys=True))
 '''
 
@@ -117,17 +121,10 @@ if st is None:
     print(json.dumps({"restored": False, "reason": "no_state"}, sort_keys=True))
 else:
     errors = []
-    for a in getattr(st, "hidden", []):
-        try:
-            a.set_is_temporarily_hidden_in_editor(False)
-        except Exception as e:
-            errors.append(str(e))
     try:
-        ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-        unreal.SystemLibrary.execute_console_command(
-            ues.get_editor_world(), "viewmode lit")
-        cam_loc, cam_rot = st.cam
-        ues.set_level_viewport_camera_info(cam_loc, cam_rot)
+        eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        if getattr(st, "rig", None) is not None:
+            eas.destroy_actor(st.rig)
     except Exception as e:
         errors.append(str(e))
     try:
@@ -136,8 +133,7 @@ else:
             st.comp.set_animation_mode(st.prev_anim_mode)
     except Exception as e:
         errors.append(str(e))
-    print(json.dumps({"restored": not errors,
-                      "unhidden": len(getattr(st, "hidden", [])),
+    print(json.dumps({"restored": not errors, "rig_destroyed": True,
                       "errors": errors[:5]}, sort_keys=True))
 '''
 

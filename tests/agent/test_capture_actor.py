@@ -9,7 +9,7 @@ from vera.tools.ue_conn import UEConnectionError
 
 
 def _setup_payload(tmp_path, **over):
-    d = {"actor": "VERA_Manny", "hidden_actors": 3,
+    d = {"actor": "VERA_Manny", "isolation": "show_only_list",
          "screenshot_dir": str(tmp_path), "animation": "MM_Idle",
          "anim_length": 2.0}
     d.update(over)
@@ -35,7 +35,7 @@ class FakeBridge:
         self.scripts.append(s)
         if "sys.modules.pop" in s:                      # restore
             return {"success": True, "output": json.dumps(self.restore)}
-        if "take_high_res_screenshot" in s:             # frame
+        if "capture_scene" in s:             # frame
             self.frame_count += 1
             if self.frame_fail_at == self.frame_count:
                 return {"success": False, "error": "boom en el frame"}
@@ -51,7 +51,7 @@ class FakeBridge:
         for s in self.scripts:
             if "sys.modules.pop" in s:
                 out.append("restore")
-            elif "take_high_res_screenshot" in s:
+            elif "capture_scene" in s:
                 out.append("frame")
             else:
                 out.append("setup")
