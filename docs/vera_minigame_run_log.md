@@ -165,3 +165,39 @@ visible en viewport además requiere Realtime activo; el scrubbing con
 1. El tick procedural (`vera_proc_anim`) no tiene stop/unregister formal (en esta demo se limpió a mano restaurando la base del CyberHead; no guarda rotación base).
 2. Heurística "auto" elige el primer idle alfabético (`MF_Pistol_Idle_ADS`); preferible priorizar el idle base (`MM_Idle`).
 3. El spawn sin location usa la Z de la cámara → Manny flotando; convendría trace al piso.
+
+## E2E Fase 2 — capture_actor (2026-06-12)
+
+Validación en vivo de la tool de percepción visual (spec
+`docs/superpowers/specs/2026-06-12-vera-animation-phase2-capture-design.md`).
+El diseño original (viewport + HighResShot) murió en el primer check en vivo
+y fue reemplazado por **SceneCapture2D + RenderTarget + show-only list** —
+los unit tests (105) jamás lo hubieran detectado.
+
+| Check | Resultado | Evidencia |
+|---|---|---|
+| 1. anim: Manny + MF_Unarmed_Jog_Fwd, 4 frames | ✅ 4 fases de zancada DISTINTAS, aislado contra cielo | `vera_cap_5c607b7e_*.png` |
+| 2. orbit: Enemy_CyberHead, 4 ángulos | ✅ perfil/trasera/perfil opuesto, materiales visibles | `vera_cap_9f69c7b7_*.png` |
+| 3. restore | ✅ 556/556 visibles (baseline exacto), 0 rigs huérfanos, anim mode restaurado | conteo por bridge |
+
+### Hallazgos en vivo que produjeron fixes de código
+
+1. **`take_high_res_screenshot` nunca aterriza con el editor minimizado** (ni
+   con `Slate.bAllowThrottling 0`); `EditorPerformanceSettings` no está expuesta
+   en Python 5.7 → captura reescrita a SceneCapture2D (render a demanda,
+   funciona minimizado, export síncrono) — commit `6ca609c`.
+2. **`show_only_actors` property falla** ("cannot be edited on templates");
+   el setter `show_only_actor_components(actor, True)` + `PRM_USE_SHOW_ONLY_LIST`
+   funciona → aislamiento sin tocar NINGÚN actor del nivel (ni viewport, ni
+   viewmode, ni cámara — el restore se reduce a destruir el rig).
+3. **`SCS_BASE_COLOR` rinde blanco inútil** en este nivel → `SCS_FINAL_COLOR_LDR`.
+4. **`capture_scene()` en el mismo call stack ve la pose ANTERIOR** al scrub:
+   la evaluación ocurre entre ticks → pose y captura en round-trips separados
+   (`a2fed70`) + espera de settle 0.25s (`ed26fd8`).
+5. **Restricción documentada**: `mode=anim` requiere la ventana del editor
+   visible (no minimizada; foco NO hace falta — tickea a 60fps restaurada);
+   `mode=orbit` funciona incluso minimizado (transforms son inmediatos).
+   Scrub 100% headless (AnimPose CPU-side) queda como follow-up.
+6. Mi propio probe manual crasheado dejó un SceneCapture2D huérfano en el
+   nivel — exactamente la clase de fuga que el restore-en-finally de la tool
+   previene (la tool nunca dejó huérfanos en ninguna corrida).
