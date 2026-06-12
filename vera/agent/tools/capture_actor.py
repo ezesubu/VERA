@@ -25,6 +25,9 @@ from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 MAX_FRAMES = 6
 FILE_TIMEOUT_S = 15.0
 POLL_INTERVAL_S = 0.3
+# tras el scrub, el editor necesita tickear (~60fps visible) para evaluar la
+# pose ANTES de capturar; sin esta espera la captura ve la pose anterior
+POSE_SETTLE_S = 0.25
 
 
 class CaptureActorTool(Tool):
@@ -121,6 +124,8 @@ class CaptureActorTool(Tool):
                 if pose.get("error"):
                     warnings.append(f"frame {i} (pose): {pose['error']}")
                     break
+                if mode == "anim":
+                    time.sleep(POSE_SETTLE_S)
                 frame = self._send(ctx, build_capture_script(fname))
                 if isinstance(frame, ToolResult):
                     warnings.append(f"frame {i}: {frame.content}")

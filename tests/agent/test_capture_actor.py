@@ -65,6 +65,7 @@ class FakeBridge:
 def _fast(monkeypatch):
     monkeypatch.setattr(mod, "POLL_INTERVAL_S", 0.0)
     monkeypatch.setattr(mod, "FILE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(mod, "POSE_SETTLE_S", 0.0)
 
 
 def test_es_read_only():
