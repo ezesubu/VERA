@@ -65,5 +65,7 @@ Este es el plan de acción autónomo para llevar a VERA de un script de Python a
 - **Fase 2 (implementada 2026-06-12):** percepción visual — tool `capture_actor`
   (aislamiento + unlit + scrub/órbita determinísticos, restore garantizado). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase2-capture-design.md`.
-- **Fase 3 (pendiente, condicional):** Sequencer / Control Rig / retargeting, solo si
-  las fases 1-2 se validan en vivo.
+- **Fase 3 (implementada 2026-06-12):** retargeting — tools `ensure_ik_rig`,
+  `ensure_retargeter`, `retarget_animations` (find-first, auto-creación). Spec:
+  `docs/superpowers/specs/2026-06-12-vera-animation-phase3-retarget-design.md`.
+  Pendientes futuros: Sequencer, Control Rig.
