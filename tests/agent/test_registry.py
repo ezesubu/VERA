@@ -52,3 +52,17 @@ def test_discover_finds_run_ue_python():
     tool = reg.get("run_ue_python")
     assert tool is not None
     assert tool.destructive is True
+
+
+def test_discover_classes_registers_loaded_classes():
+    reg = ToolRegistry()
+    reg.discover_classes([FakeTool])
+    assert reg.get("fake") is not None
+
+
+def test_discover_classes_skips_non_tool_and_base():
+    reg = ToolRegistry()
+    # passing the base Tool class or a non-Tool is ignored, not an error
+    reg.discover_classes([Tool, int, FakeTool])
+    assert reg.get("fake") is not None
+    assert reg.all() == [reg.get("fake")]

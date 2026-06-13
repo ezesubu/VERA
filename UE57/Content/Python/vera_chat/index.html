@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self' qrc:; object-src 'none'; base-uri 'none'">
@@ -7,16 +7,111 @@
 <link rel="stylesheet" href="chat.css">
 </head>
 <body>
+<div class="grain"></div>
+
+<!-- ===== minimal header ===== -->
 <div id="header">
-  <div id="brand"><b>VERA</b><span id="status" class="off">● Offline</span></div>
-  <div id="chips"></div>
+  <div id="brand">
+    <span id="status" class="off" title="offline"><svg class="vlogo" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="3" opacity="0.5"/><path d="M28 28 L43 28 L50 54 L57 28 L72 28 L50 80 Z" fill="currentColor"/></svg></span>
+    <span class="mark">VE<b>R</b>A</span>
+  </div>
+  <button class="icon-btn" id="gear" title="Setup">⚙</button>
 </div>
+
+<!-- ===== tabs ===== -->
+<div id="tabbar"></div>
+
+<!-- ===== chat ===== -->
 <div id="chat"></div>
-<div id="inputbar">
-  <textarea id="input" rows="1" placeholder="Type an instruction…"></textarea>
-  <button id="mic" title="Voice input">🎤</button>
-  <button id="send" title="Send">➤</button>
+
+<!-- ===== input dock ===== -->
+<div id="bar">
+  <!-- model popover (opens above the dock) -->
+  <div class="pop" id="pop">
+    <div class="search">
+      <span style="color:var(--ink-faint)">⌕</span>
+      <input placeholder="Search provider or model…" id="pop-q">
+      <span class="k">esc</span>
+    </div>
+    <div class="list" id="pop-list"></div>
+  </div>
+
+  <div class="bar-ctl">
+    <button class="model-pick" id="model-pick" title="Model">
+      <span class="mp-dot off" id="mp-dot"></span>
+      <span class="mp-name" id="mp-name">select a model</span>
+      <span class="mp-caret">▾</span>
+    </button>
+    <div class="seg" id="seg" title="Permission mode">
+      <button data-m="ask" class="on">Ask</button>
+      <button data-m="auto">Auto</button>
+      <button data-m="readonly">Read</button>
+    </div>
+  </div>
+
+  <div class="bar-row">
+    <textarea id="input" rows="1" placeholder="e.g. List all actors in the current level"></textarea>
+    <button class="send" id="send" title="Send">➤</button>
+  </div>
 </div>
+
+<!-- ===== setup slide-over ===== -->
+<div class="scrim" id="scrim"></div>
+<aside class="setup" id="setup">
+  <div class="s-hd"><h2>Setup</h2><button class="x" id="setup-x">✕</button></div>
+  <div class="s-body">
+    <div class="intro">Connect a brain. VERA runs your <b>local</b> LLM (LM Studio) for free and offline, or a cloud model when you want more power. Keys are saved to your <code>.env</code> and never sent back to the frontend.</div>
+
+    <!-- LM Studio -->
+    <div class="card">
+      <div class="c-hd">
+        <div class="c-ico" style="background:#06211d;border:1px solid var(--teal-dim);color:var(--teal)">◇</div>
+        <div class="c-name"><div class="t">LM Studio · Local</div><div class="st no" id="st-LOCAL">○ not detected</div></div>
+      </div>
+      <div class="field">
+        <input value="http://172.21.80.1:1233" id="lm-url">
+        <button id="lm-detect">Detect</button>
+      </div>
+      <div class="detected" id="lm-list"></div>
+      <div class="tip">For solid tool-calling use <code>Qwen2.5-Coder-32B</code> or <code>Llama-3.3-70B</code>. Load one in LM Studio.</div>
+      <label class="toggle"><input type="checkbox" id="opt-compact"><span class="tg"></span><span class="tg-lbl">Compact prompt <small>shorter system prompt — better for small local models</small></span></label>
+    </div>
+
+    <!-- Anthropic -->
+    <div class="card">
+      <div class="c-hd">
+        <div class="c-ico" style="background:#2a1607;border:1px solid #5a3410;color:#ff9d5c">A</div>
+        <div class="c-name"><div class="t">Anthropic</div><div class="st no" id="st-ANTHROPIC">○ not configured</div></div>
+      </div>
+      <div class="field"><input type="password" placeholder="sk-ant-…" id="k-ANTHROPIC"><button data-p="ANTHROPIC" class="test">Test</button></div>
+    </div>
+
+    <!-- OpenAI -->
+    <div class="card">
+      <div class="c-hd">
+        <div class="c-ico" style="background:#0a2018;border:1px solid #14533b;color:#5fe0a8">O</div>
+        <div class="c-name"><div class="t">OpenAI</div><div class="st no" id="st-OPENAI">○ not configured</div></div>
+      </div>
+      <div class="field"><input type="password" placeholder="sk-…" id="k-OPENAI"><button data-p="OPENAI" class="test">Test</button></div>
+    </div>
+
+    <!-- Gemini -->
+    <div class="card">
+      <div class="c-hd">
+        <div class="c-ico" style="background:#101a2e;border:1px solid #1f3a66;color:#7ab0ff">G</div>
+        <div class="c-name"><div class="t">Gemini</div><div class="st no" id="st-GEMINI">○ not configured</div></div>
+      </div>
+      <div class="field"><input type="password" placeholder="AIza…" id="k-GEMINI"><button data-p="GEMINI" class="test">Test</button></div>
+    </div>
+
+    <!-- Plugins -->
+    <div class="s-sec">Plugins <span class="s-sec-hint">VERA_Plugins/ in your project</span></div>
+    <div class="plugins" id="plugins-list">
+      <div class="plug-empty">No plugins found. Drop a folder in <code>VERA_Plugins/</code> with <code>tools/</code> and/or a <code>SKILL.md</code>.</div>
+    </div>
+  </div>
+</aside>
+
 <script src="vendor/marked.min.js"></script>
 <script src="vendor/highlight.min.js"></script>
 <script src="vendor/purify.min.js"></script>

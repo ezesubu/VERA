@@ -26,13 +26,18 @@ class AgentSession:
         command: str,
         emit: Optional[Callable[[dict], None]] = None,
         confirm: Optional[Callable] = None,
+        include_destructive: bool = True,
     ) -> dict:
         """Ejecuta un comando dentro de la sesión (muta `self.messages`).
         `confirm`: override del gate destructivo para esta llamada puntual
-        (p.ej. el round-trip al socket de la conexión en curso)."""
+        (p.ej. el round-trip al socket de la conexión en curso).
+        `include_destructive`: False = modo readonly (esconde tools destructivas)."""
         with self._lock:
             self._trim()
-            return self.loop.run(command, emit=emit, messages=self.messages, confirm=confirm)
+            return self.loop.run(
+                command, emit=emit, messages=self.messages, confirm=confirm,
+                include_destructive=include_destructive,
+            )
 
     def inject(
         self,

@@ -16,15 +16,36 @@ try:
     HAS_PYSIDE = True
     try:
         from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWebEngineCore import QWebEnginePage
         from PySide6.QtWebChannel import QWebChannel
+        from PySide6.QtGui import QDesktopServices
         HAS_WEBENGINE = True
     except ImportError:
         pass
 except ImportError:
+    # PySide6 isn't available yet (it's pip-installed on-demand the first time
+    # the UI opens). Define no-op stand-ins so this module can still be IMPORTED
+    # without Qt; the real UI only runs once PySide6 is present. Without these,
+    # the module-level `@Slot(...)` decorators on PyBridge raise NameError at
+    # import time and the on-demand installer never gets a chance to run.
+    HAS_PYSIDE = False
+
+    def Slot(*args, **kwargs):
+        """No-op replacement for QtCore.Slot; supports @Slot() and @Slot(str,...)."""
+        def _decorator(func):
+            return func
+        return _decorator
+
     class QWidget(object):
         pass
+
     class QObject(object):
         pass
+
+    Qt = None
+    QUrl = None
+    QApplication = None
+    QVBoxLayout = None
 
 import vera_history
 
@@ -36,6 +57,9 @@ CHAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vera_chat")
 HISTORY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "Saved", "VERA", "chat_history.jsonl")
+TABS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "Saved", "VERA", "tabs.json")
 BACKEND = ("127.0.0.1", 9880)
 STREAM_FINAL_TIMEOUT = 300.0
 
@@ -81,14 +105,63 @@ class PyBridge(QObject):
     def js_ready(self):
         self._window.on_js_ready()
 
-    @Slot(str)
-    def send_command(self, text):
-        self._window.send_command(text)
+    @Slot(str, str, str, str, str)
+    def send_command(self, text, provider="", model="", mode="", session_id=""):
+        """User command. provider/model/mode/session_id come from the active tab.
+        'mode' is already the EFFECTIVE mode for this turn."""
+        self._window.send_command(text, provider or None, model or None,
+                                  mode or None, session_id or None)
 
     @Slot(bool)
     def answer_question(self, approve):
         """El usuario tocó Aprobar/Rechazar en el chat (round-trip del gate)."""
         _answer_queue.put(bool(approve))
+
+    # ---- selección persistente (provider/model/mode) ----
+    @Slot(str, str)
+    def set_model(self, provider, model):
+        self._window.provider = provider or None
+        self._window.model = model or None
+
+    @Slot(str)
+    def set_mode(self, mode):
+        self._window.mode = mode or None
+
+    # ---- control ops (round-trip al backend en un hilo) ----
+    @Slot(str)
+    def list_models(self, provider):
+        self._window.control_op({"op": "list_models", "provider": provider})
+
+    @Slot(str)
+    def test_connection(self, provider):
+        self._window.control_op({"op": "test_connection", "provider": provider})
+
+    @Slot()
+    def providers(self):
+        self._window.control_op({"op": "providers"})
+
+    @Slot(str, str)
+    def save_credentials(self, provider, key):
+        self._window.control_op({"op": "save_credentials", "provider": provider, "key": key})
+
+    # ---- compact prompt toggle (per-turn flag, persisted on the window) ----
+    @Slot(bool)
+    def set_compact(self, on):
+        self._window.compact = bool(on)
+
+    # ---- plugins ----
+    @Slot()
+    def plugins(self):
+        self._window.control_op({"op": "plugins"})
+
+    @Slot(str, bool)
+    def set_plugin(self, plugin_id, enabled):
+        self._window.control_op({"op": "set_plugin", "id": plugin_id, "enabled": bool(enabled)})
+
+    # ---- tabs persistence ----
+    @Slot(str)
+    def save_tabs(self, data_json):
+        self._window.save_tabs(data_json)
 
     @Slot(str)
     def open_image(self, path):
@@ -117,6 +190,25 @@ class PyBridge(QObject):
             unreal.log_error(f"[VERA UI] no pude abrir la imagen: {e}")
 
 
+# ---------- web page: external links open in the system browser ----------
+class VeraWebPage(QWebEnginePage if HAS_WEBENGINE else object):
+    """Keeps the chat in the view; opens external links in the OS browser.
+
+    Without this, clicking a link inside a message (e.g. a billing URL in a
+    provider error) navigates the whole webview away and the VERA chat is lost.
+    We intercept link clicks and hand http(s) URLs to the system browser, so the
+    chat stays intact and the page opens OUTSIDE Unreal.
+    """
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        try:
+            if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+                QDesktopServices.openUrl(url)
+                return False  # do NOT navigate the chat view away
+        except Exception as e:
+            unreal.log_warning(f"[VERA UI] could not open external link: {e}")
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
 # ---------- ventana WebEngine ----------
 class VeraWebWindow(QWidget):
     def __init__(self):
@@ -125,14 +217,22 @@ class VeraWebWindow(QWidget):
         self.resize(460, 720)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
+        # selección persistente del cerebro (la pisa el JS vía set_model/set_mode)
+        self.provider = None
+        self.model = None
+        self.mode = None
+        self.compact = False  # compact prompt toggle (JS via set_compact)
+
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         self.view = QWebEngineView()
+        self.web_page = VeraWebPage(self.view)
+        self.view.setPage(self.web_page)
         self.channel = QWebChannel()
         self.pybridge = PyBridge(self)
         self.channel.registerObject("pybridge", self.pybridge)
-        self.view.page().setWebChannel(self.channel)
-        self.view.load(QUrl.fromLocalFile(os.path.join(CHAT_DIR, "index.html")))
+        self.web_page.setWebChannel(self.channel)
+        self.web_page.load(QUrl.fromLocalFile(os.path.join(CHAT_DIR, "index.html")))
         layout.addWidget(self.view)
         self.setLayout(layout)
 
@@ -149,27 +249,81 @@ class VeraWebWindow(QWidget):
         self.view.page().runJavaScript(js)
 
     def on_js_ready(self):
-        # Historial primero, después estado de conexión
-        events = vera_history.load_recent(HISTORY_PATH)
-        if events:
-            self.view.page().runJavaScript(
-                "veraChat.dispatch(" + json.dumps(
-                    {"type": "history", "events": events}, ensure_ascii=True) + ")")
-        else:
-            self.handle_event({"type": "final", "status": "success",
-                               "msg": "Hi, I'm VERA. What are we building today?"})
+        # Restore saved tabs (full state lives in one tabs.json); JS rebuilds them.
+        saved = self._load_tabs()
+        self.view.page().runJavaScript(
+            "veraChat.dispatch(" + json.dumps(
+                {"type": "restore_tabs", "tabs": saved.get("tabs", []),
+                 "active": saved.get("active")}, ensure_ascii=True) + ")")
         threading.Thread(target=self._check_status, daemon=True).start()
 
     # --- backend ---
-    def send_command(self, text):
-        # El JS ya pintó la burbuja del usuario; acá solo persistimos y enviamos
-        try:
-            vera_history.append_event(HISTORY_PATH, {"type": "user", "msg": text})
-        except OSError:
-            pass
-        threading.Thread(target=self._stream_command, args=(text,), daemon=True).start()
+    def send_command(self, text, provider=None, model=None, mode=None, session_id=None):
+        # The JS already painted the user bubble; here we just send.
+        # provider/model fall back to the persisted selection if the turn omits them.
+        # mode is already EFFECTIVE; session_id routes to the right tab's context.
+        prov = provider or self.provider
+        mdl = model or self.model
+        md = mode or self.mode
+        threading.Thread(target=self._stream_command,
+                         args=(text, prov, mdl, md, session_id), daemon=True).start()
 
-    def _stream_command(self, text):
+    # --- tabs persistence (JS-driven; full state in one tabs.json) ---
+    def save_tabs(self, data_json):
+        try:
+            json.loads(data_json)  # validate before writing
+            os.makedirs(os.path.dirname(TABS_PATH), exist_ok=True)
+            with open(TABS_PATH, "w", encoding="utf-8") as f:
+                f.write(data_json)
+        except (OSError, ValueError) as e:
+            unreal.log_warning(f"[VERA UI] could not save tabs: {e}")
+
+    def _load_tabs(self):
+        try:
+            with open(TABS_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {"tabs": []}
+
+    # --- control ops (list_models / test_connection / providers / save_credentials) ---
+    def control_op(self, op_payload):
+        """Round-trip de una línea JSON al backend: empuja el evento de respuesta a JS."""
+        threading.Thread(target=self._control_op, args=(op_payload,), daemon=True).start()
+
+    def _control_op(self, op_payload):
+        import socket
+        global _pending_events
+        try:
+            with socket.create_connection(BACKEND, timeout=10.0) as s:
+                s.settimeout(15.0)
+                s.sendall((json.dumps(op_payload) + "\n").encode("utf-8"))
+                buf = b""
+                while b"\n" not in buf:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                line = buf.split(b"\n", 1)[0].strip()
+                if line:
+                    try:
+                        event = json.loads(line.decode("utf-8"))
+                        _pending_events.append(event)
+                    except ValueError:
+                        pass
+        except OSError:
+            # Sin backend: degradamos en silencio (la UI ya tiene fallback visual).
+            op = op_payload.get("op")
+            prov = op_payload.get("provider")
+            if op == "list_models":
+                _pending_events.append({"type": "models", "provider": prov,
+                                        "models": [], "status": "offline"})
+            elif op == "test_connection":
+                _pending_events.append({"type": "conn", "provider": prov,
+                                        "ok": False, "detail": "backend offline"})
+            elif op == "save_credentials":
+                _pending_events.append({"type": "saved", "provider": prov, "ok": False})
+
+    def _stream_command(self, text, provider=None, model=None, mode=None, session_id=None):
         import socket
         global _pending_events
 
@@ -202,10 +356,21 @@ class VeraWebWindow(QWidget):
                 return
 
         # Default: send to vera_server
+        payload = {"command": text}
+        if provider:
+            payload["provider"] = provider
+        if model:
+            payload["model"] = model
+        if mode:
+            payload["mode"] = mode
+        if getattr(self, "compact", False):
+            payload["compact"] = True
+        if session_id:
+            payload["session_id"] = session_id
         try:
             with socket.create_connection(BACKEND, timeout=STREAM_FINAL_TIMEOUT) as s:
                 s.settimeout(STREAM_FINAL_TIMEOUT)
-                s.sendall((json.dumps({"command": text}) + "\n").encode("utf-8"))
+                s.sendall((json.dumps(payload) + "\n").encode("utf-8"))
                 buf = b""
                 while True:
                     chunk = s.recv(4096)
@@ -276,7 +441,18 @@ try:
     from PySide6.QtGui import QFont, QColor, QPalette, QCursor
     _HAS_FALLBACK_WIDGETS = True
 except ImportError:
+    # PySide6 missing: define no-op stand-ins so this module still imports.
+    # `Signal()` runs at class-body level in ChatInputEdit, so it must exist as
+    # a callable even when Qt is absent (the fallback UI never actually runs).
     _HAS_FALLBACK_WIDGETS = False
+
+    def Signal(*args, **kwargs):
+        return None
+
+    QHBoxLayout = QTextEdit = QLineEdit = QPushButton = None
+    QScrollArea = QLabel = QFrame = QSizePolicy = QGraphicsOpacityEffect = None
+    QTimer = QPropertyAnimation = QEasingCurve = None
+    QFont = QColor = QPalette = QCursor = None
 
 
 class Bubble(QFrame if _HAS_FALLBACK_WIDGETS else object):

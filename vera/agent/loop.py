@@ -59,16 +59,23 @@ class AgentLoop:
         *,
         messages: Optional[list] = None,
         confirm: Optional[Callable] = None,
+        include_destructive: bool = True,
     ) -> dict:
         """`messages`: historial externo (lo muta in place — lo posee la Session).
         `confirm`: override por-comando del gate destructivo (p.ej. el round-trip
-        a la UI de la conexión en curso)."""
+        a la UI de la conexión en curso).
+        `include_destructive`: si es False, las tools `destructive` se EXCLUYEN del
+        schema que ve el modelo (modo readonly / "planear esta vez"). El modelo ni
+        las ve, así que no las puede invocar."""
         ctx = ToolContext(bridge_port=self.bridge_port, emit=emit, llm=self.llm)
         confirm = confirm if confirm is not None else self.confirm
         if messages is None:
             messages = []
         messages.append({"role": "user", "content": command})
-        tools = self.registry.to_anthropic()
+        if include_destructive:
+            tools = self.registry.to_anthropic()
+        else:
+            tools = [t.to_anthropic() for t in self.registry.all() if not t.destructive]
 
         for _ in range(MAX_ITERATIONS):
             try:

@@ -5,8 +5,14 @@ import socket
 import threading
 import importlib
 
+from vera.agent.factory import make_llm_client
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+DEFAULT_PROVIDER = "ANTHROPIC"
+DEFAULT_MODEL = "claude-opus-4-8"
+DEFAULT_MODE = "ask"
 
 CONFIRM_TIMEOUT = 120.0  # segundos para que el usuario apruebe una accion destructiva
 MAX_CONFIRM_BYTES = 4096  # una respuesta legitima ({"approve": true}) pesa < 100 bytes
@@ -39,7 +45,9 @@ class VeraServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._stop = threading.Event()
         self._busy = threading.Lock()
-        self._session = None  # AgentSession persistente (solo con VERA_USE_AGENT_LOOP)
+        # One persistent AgentSession per tab/session_id (each tab = its own
+        # conversation context). entry = {"session": AgentSession, "compact": bool}.
+        self._sessions = {}
 
     # ---- emisión ----
 
@@ -105,10 +113,22 @@ class VeraServer:
                 return
 
             payload = json.loads(data.decode("utf-8").strip())
+
+            # Control ops: NO son comandos del agente. Una línea JSON con "op" →
+            # una línea JSON de respuesta. No tocan el lock de ocupado.
+            if "op" in payload:
+                emit(self._handle_control_op(payload))
+                return
+
             command = payload.get("command", "")
             if not command:
                 emit({"type": "final", "status": "error", "msg": "Comando vacío."})
                 return
+            provider = payload.get("provider") or DEFAULT_PROVIDER
+            model = payload.get("model") or DEFAULT_MODEL
+            mode = payload.get("mode") or DEFAULT_MODE
+            session_id = payload.get("session_id") or "default"
+            compact = bool(payload.get("compact", False))
 
             if command.strip().lower() in ("hello world", "hello world!"):
                 emit({"type": "final", "status": "success",
@@ -125,8 +145,15 @@ class VeraServer:
                 # Cerebro agéntico: sesión persistente (historial entre comandos),
                 # Manager viejo como fallback si el flag está apagado.
                 if os.environ.get("VERA_USE_AGENT_LOOP"):
-                    result = self._agent_session().run(
-                        command, emit=emit, confirm=self._make_confirm(conn, emit))
+                    session = self._agent_session(session_id, provider, model, compact)
+                    self._reconfigure_session(session_id, provider, model)
+                    if mode == "auto":
+                        confirm = lambda tool, args: True  # noqa: E731
+                    else:
+                        confirm = self._make_confirm(conn, emit)
+                    result = session.run(
+                        command, emit=emit, confirm=confirm,
+                        include_destructive=self._include_destructive_for_mode(mode))
                     success = result.get("status") == "success"
                     return
 
@@ -166,15 +193,152 @@ class VeraServer:
         finally:
             conn.close()
 
-    def _agent_session(self):
-        """Sesión agéntica persistente: el historial sobrevive entre comandos.
-        Lazy: solo se construye si el flag está activo."""
-        if self._session is None:
-            import anthropic
+    def _agent_session(self, session_id, provider=DEFAULT_PROVIDER,
+                       model=DEFAULT_MODEL, compact=False):
+        """Persistent agent session per tab/session_id. Each tab keeps its own
+        conversation history. Rebuilt only if `compact` changed for that tab
+        (compact vs full system prompt). Lazy: built on first use."""
+        entry = self._sessions.get(session_id)
+        if entry is None or entry["compact"] != compact:
             from vera.agent.factory import build_agent_loop
             from vera.agent.session import AgentSession
-            self._session = AgentSession(build_agent_loop(anthropic.Anthropic()))
-        return self._session
+            sess = AgentSession(
+                build_agent_loop(provider=provider, model=model, compact=compact))
+            entry = {"session": sess, "compact": compact}
+            self._sessions[session_id] = entry
+        return entry["session"]
+
+    def _reconfigure_session(self, session_id, provider, model):
+        """Reconfigure this tab's loop for the turn: swap LLM client and model
+        without losing the tab's history."""
+        entry = self._sessions.get(session_id)
+        if entry is None:
+            return
+        loop = entry["session"].loop
+        loop.llm = make_llm_client(provider, model)
+        loop.model = model
+
+    @staticmethod
+    def _include_destructive_for_mode(mode):
+        """readonly esconde las tools destructivas del schema que ve el modelo."""
+        return mode != "readonly"
+
+    # ---- control ops ----
+
+    def _env_path(self):
+        return os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+
+    def _handle_control_op(self, payload):
+        """Despacha una control op (línea JSON con "op") → un dict de respuesta."""
+        op = payload.get("op")
+        try:
+            if op == "providers":
+                from vera.agent.models import list_providers
+                return {"type": "providers", "providers": list_providers()}
+            if op == "list_models":
+                from vera.agent import models
+                provider = payload.get("provider")
+                out = models.list_models(provider)
+                return {"type": "models", "provider": provider,
+                        "models": out["models"], "status": out["status"]}
+            if op == "test_connection":
+                return self._test_connection(payload.get("provider"))
+            if op == "save_credentials":
+                return self._save_credentials(payload.get("provider"), payload.get("key"))
+            if op == "plugins":
+                return self._list_plugins()
+            if op == "set_plugin":
+                return self._set_plugin(payload.get("id"), bool(payload.get("enabled")))
+        except Exception as e:  # nunca devolver un stacktrace crudo por el socket
+            logger.error("[VeraServer] control op %s falló: %s", op, e)
+            return {"type": "error", "msg": f"control op falló: {e}"}
+        return {"type": "error", "msg": f"op desconocida: {op}"}
+
+    def _test_connection(self, provider):
+        """Verifica disponibilidad sin correr el agente. LOCAL → pinga /models;
+        el resto → chequea que la credencial esté presente."""
+        from vera.agent import models
+        spec = models.PROVIDERS.get(provider)
+        if spec is None:
+            return {"type": "conn", "provider": provider, "ok": False,
+                    "detail": "proveedor desconocido"}
+        if spec.get("discover"):
+            out = models.list_models(provider)
+            ok = out["status"] == "online"
+            detail = (f"{len(out['models'])} modelo(s) cargado(s)" if ok
+                      else "LM Studio no responde (cargá un modelo)")
+            return {"type": "conn", "provider": provider, "ok": ok, "detail": detail}
+        if not models.has_key(provider):
+            return {"type": "conn", "provider": provider, "ok": False,
+                    "detail": "falta la API key"}
+        return {"type": "conn", "provider": provider, "ok": True, "detail": "credencial presente"}
+
+    def _save_credentials(self, provider, key):
+        """Escribe/actualiza la key del proveedor en el .env del repo y en
+        os.environ. La key NUNCA se devuelve."""
+        from vera.agent.models import PROVIDERS
+        spec = PROVIDERS.get(provider)
+        env_name = spec.get("env") if spec else None
+        if not env_name:
+            return {"type": "error", "msg": f"el proveedor {provider} no usa API key"}
+        self._write_env_var(env_name, key)
+        os.environ[env_name] = key
+        return {"type": "saved", "provider": provider, "ok": True}
+
+    def _write_env_var(self, name, value):
+        """Upsert de una variable en el .env (preserva el resto de las líneas)."""
+        path = self._env_path()
+        lines = []
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        out = []
+        found = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped \
+                    and stripped.split("=", 1)[0].strip() == name:
+                out.append(f"{name}={value}")
+                found = True
+            else:
+                out.append(line)
+        if not found:
+            out.append(f"{name}={value}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+
+    # ---- plugins ----
+
+    def _plugins_dir(self):
+        from vera.agent import factory
+        return factory.PLUGINS_DIR
+
+    def _list_plugins(self):
+        """Lista los plugins descubiertos con sus tools y si traen skill."""
+        from vera.agent.plugins import discover_plugins
+        out = []
+        for p in discover_plugins(self._plugins_dir()):
+            out.append({
+                "id": p.id,
+                "name": p.name,
+                "version": p.version,
+                "author": p.author,
+                "description": p.description,
+                "enabled": p.enabled,
+                "tools": [tc.name for tc in p.tool_classes],
+                "has_skill": p.skill_text is not None,
+            })
+        return {"type": "plugins", "plugins": out}
+
+    def _set_plugin(self, plugin_id, enabled):
+        """Persiste el estado del plugin y descarta la sesión para que el próximo
+        comando rearme el registry/loop con el cambio aplicado."""
+        from vera.agent.plugins import set_plugin_enabled
+        ok = set_plugin_enabled(self._plugins_dir(), plugin_id, enabled)
+        if ok:
+            self._sessions = {}  # all tabs rebuild with the new plugin set next turn
+        return {"type": "plugin_set", "id": plugin_id, "enabled": enabled, "ok": ok}
 
     # ---- ciclo de vida ----
 

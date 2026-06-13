@@ -15,6 +15,7 @@ from vera.core.blueprint_generator import BlueprintGenerator
 from vera.core.qa_agent import QAAgent
 from vera.core.decision_agent import DecisionAgent
 from vera.core.log_qa_agent import LogQAAgent
+from vera.core.project_analyzer_agent import ProjectAnalyzerAgent
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,13 @@ class ManagerAgent:
     def __init__(self, blackboard: Blackboard):
         self.blackboard = blackboard
         self.action_cache = blackboard.action_cache
-        
+
         # Initialize the Crew
         self.python_agent = UEPythonAgent(blackboard)
         self.perception_agent = PerceptionAgent(blackboard)
         self.bp_generator = BlueprintGenerator(self.python_agent)
         self.qa_agent = QAAgent(self.python_agent)
+        self.project_analyzer = ProjectAnalyzerAgent(blackboard)
         
         from vera.core.architect_agent import ArchitectAgent
         self.architect_agent = ArchitectAgent(self)
@@ -43,10 +45,7 @@ class ManagerAgent:
         
         from vera.tools.cloud_sync import CloudSyncAgent
         self.cloud_sync = CloudSyncAgent("e:/PCW/VERA/vera/recipes")
-        
-        from vera.core.voice_agent import VoiceAgent
-        self.voice_agent = VoiceAgent(self)
-        
+
         # Interactive Decision Maker
         self.decision_agent = DecisionAgent(self.llm)
         
@@ -56,25 +55,46 @@ class ManagerAgent:
     def _progress(self, agent: str, msg: str) -> None:
         self.blackboard.report_progress(agent, msg)
 
+    def _keyword_route(self, command: str) -> str | None:
+        """Fast keyword-based pre-routing — no LLM needed."""
+        lower = command.lower()
+        analyzer_kw = ["missing", "analyze", "analysis", "scan", "niagara", "acf", "gas",
+                       "what assets", "que falta", "assets are", "plugins", "installed",
+                       "detect", "check for", "falta", "tiene", "project has"]
+        if any(kw in lower for kw in analyzer_kw):
+            return "ANALYZER"
+        log_kw = ["error", "warning", "log", "logs", "busca errores", "analiza el log"]
+        if any(kw in lower for kw in log_kw):
+            return "LOG_QA"
+        return None
+
     def _route_command(self, command: str) -> str:
         """Uses LLM to classify the user's command into a routing category."""
+        fast = self._keyword_route(command)
+        if fast:
+            logger.info(f"[Manager] Keyword route: {fast}")
+            return fast
+
         system_instruction = (
             "You are the Manager Agent for VERA. Route the user's task to a sub-agent: "
-            "1. 'PERCEPTION' -> Requires clicking a UI button or reading the screen. "
-            "2. 'PYTHON' -> Standard editor tasks, modifying actors, setting variables. "
-            "3. 'BLUEPRINT' -> Explicit request to CREATE a Blueprint class. "
-            "4. 'QA' -> Request to test the game or play the level. "
-            "5. 'ARCHITECT' -> Massive multi-step project ('Make me a game', 'Build a level'). "
-            "6. 'GIT' -> Request to commit code, create a branch, or revert changes. "
-            "7. 'CRITIC' -> Request to analyze the scene composition, lighting, or artistic quality. "
-            "8. 'LOG_QA' -> Request to check the logs for errors or warnings ('busca errores', 'analiza el log'). "
-            "Reply with EXACTLY ONE word: PERCEPTION, PYTHON, BLUEPRINT, QA, ARCHITECT, GIT, CRITIC, or LOG_QA."
+            "1. 'ANALYZER' -> Analyze project, scan Content/, detect missing assets ('what's missing', 'analyze', 'scan'). "
+            "2. 'PERCEPTION' -> Requires clicking a UI button or reading the screen. "
+            "3. 'PYTHON' -> Standard editor tasks, modifying actors, setting variables. "
+            "4. 'BLUEPRINT' -> Explicit request to CREATE a Blueprint class. "
+            "5. 'QA' -> Request to test the game or play the level. "
+            "6. 'ARCHITECT' -> Massive multi-step project ('Make me a game', 'Build a level'). "
+            "7. 'GIT' -> Request to commit code, create a branch, or revert changes. "
+            "8. 'CRITIC' -> Request to analyze the scene composition, lighting, or artistic quality. "
+            "9. 'LOG_QA' -> Request to check the logs for errors or warnings ('busca errores', 'analiza el log'). "
+            "Reply with EXACTLY ONE word: ANALYZER, PERCEPTION, PYTHON, BLUEPRINT, QA, ARCHITECT, GIT, CRITIC, or LOG_QA."
         )
         route = self.llm.generate_text(system_instruction, command)
+        logger.info(f"[Manager] LLM raw response: {repr(route)}")
         if not route: return "PYTHON"
-        
+
         route = route.strip().upper()
-        for valid in ["PERCEPTION", "PYTHON", "BLUEPRINT", "QA", "ARCHITECT", "GIT", "CRITIC", "LOG_QA"]:
+        logger.info(f"[Manager] LLM cleaned response: {repr(route)}")
+        for valid in ["ANALYZER", "PERCEPTION", "PYTHON", "BLUEPRINT", "QA", "ARCHITECT", "GIT", "CRITIC", "LOG_QA"]:
             if valid in route: return valid
         return "PYTHON"
 
@@ -121,8 +141,19 @@ class ManagerAgent:
 
         success = False
         steps_taken = []
-        
-        if route == "ARCHITECT":
+
+        if route == "ANALYZER":
+            logger.info("[Manager] LLM Routed to ProjectAnalyzer.")
+            self._progress("Analyzer", "scanning project")
+            result = self.project_analyzer.analyze()
+            logger.info(f"[ProjectAnalyzer] Result: {result}")
+            if result and result.get("summary"):
+                steps_taken.append({"action": "project_analysis", "summary": result["summary"]})
+                success = True
+            else:
+                success = False
+
+        elif route == "ARCHITECT":
             self._progress("Architect", "planning project")
             success = self.architect_agent.plan_project(command)
             if success:

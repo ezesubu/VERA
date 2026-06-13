@@ -30,6 +30,19 @@ class ToolRegistry:
     def to_anthropic(self) -> List[dict]:
         return [t.to_anthropic() for t in self._tools.values()]
 
+    def discover_classes(self, classes) -> None:
+        """Registra una lista de clases Tool ya cargadas (p.ej. las que aporta un
+        plugin). Ignora la clase base `Tool` y cualquier cosa que no sea una
+        subclase de Tool. Reutiliza el mismo gate de duplicados que `register`."""
+        for obj in classes:
+            if (
+                inspect.isclass(obj)
+                and issubclass(obj, Tool)
+                and obj is not Tool
+            ):
+                self.register(obj())
+                logger.info("[ToolRegistry] tool de plugin registrada: %s", obj().name)
+
     def discover(self, package) -> None:
         """Importa todos los módulos de `package` y registra cada subclase de Tool
         definida en ellos (instanciada sin argumentos)."""

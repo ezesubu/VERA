@@ -1,0 +1,7 @@
+{
+  "name": "Memory",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Gives VERA persistent memory: save and recall facts across conversations (project conventions, user preferences, decisions, naming, gotchas). Backed by a self-contained JSONL store.",
+  "enabled": true
+}
