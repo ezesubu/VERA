@@ -113,6 +113,9 @@ else:
                                     "chains manuales en el editor")}
             else:
                 created = True
+                # sin save, un restart del editor pierde el asset (E2E vivo):
+                # el find-first entre sesiones depende de assets persistidos
+                unreal.EditorAssetLibrary.save_asset(rig.get_path_name().rsplit(".", 1)[0])
     if error is not None:
         print(json.dumps(error, sort_keys=True))
     else:
@@ -191,6 +194,8 @@ else:
                               "detail": "auto_map_chains no encontro pares; revisar nombres de chains"},
                              sort_keys=True))
         else:
+            if created:
+                unreal.EditorAssetLibrary.save_asset(rtg.get_path_name().rsplit(".", 1)[0])
             print(json.dumps({"retargeter_path": rtg.get_path_name().rsplit(".", 1)[0],
                               "chain_mapping": mapping, "unmapped_chains": unmapped,
                               "created": created}, sort_keys=True))
@@ -255,6 +260,7 @@ else:
                 old = str(ad.package_name)
                 new = dest_dir + "/" + str(ad.asset_name)
                 unreal.EditorAssetLibrary.rename_asset(old, new)
+                unreal.EditorAssetLibrary.save_asset(new)
                 created.append(new)
         available = created + [dest_dir + "/" + n + "_VERA_RTG" for n in chosen if n not in to_do]
         played = None

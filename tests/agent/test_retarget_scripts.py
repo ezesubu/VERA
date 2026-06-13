@@ -56,3 +56,11 @@ def test_helpers_compartidos_presentes():
     assert "_skeleton_from_ref" in s and "_find_actor" in s
     s2 = build_retarget_batch_script("/Game/R", "auto", None, False)
     assert "_anims_for_skeleton" in s2
+
+
+def test_los_assets_creados_se_guardan_a_disco():
+    # un restart del editor sin save pierde todo lo creado (descubierto en E2E):
+    # el find-first entre sesiones depende de assets persistidos
+    assert "save_asset" in build_ensure_rig_script("X")
+    assert "save_asset" in build_ensure_retargeter_script("A", "B")
+    assert "save_asset" in build_retarget_batch_script("/Game/R", "auto", None, False)
