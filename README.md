@@ -30,7 +30,7 @@ and verifies its own work — powered by the brain *you* choose (cloud or fully 
 - [How it works](#how-it-works)
 - [Built-in tools](#built-in-tools)
 - [Plugins](#plugins)
-- [MCP — drive the editor from Claude Code](#mcp--drive-the-editor-from-claude-code)
+- [MCP — drive the editor from your IDE](#mcp--drive-the-editor-from-your-ide)
 - [Install](#install)
 - [Configuration](#configuration)
 - [Usage](#usage)
@@ -177,10 +177,30 @@ class HelloTool(Tool):
 
 Drop the folder in `VERA_Plugins/`, toggle it on in the **Plugins** tab — done.
 
-## MCP — drive the editor from Claude Code
+## MCP — drive the editor from your IDE
 
-VERA ships an [MCP](https://modelcontextprotocol.io) server, so external agents
-(Claude Code, or any MCP client) can drive your editor:
+VERA ships an [MCP](https://modelcontextprotocol.io) server, so the AI in **your
+favorite IDE or agent** can drive your Unreal editor — write Python into it, read
+the log, screenshot the viewport, or run a full VERA command — without leaving your
+editor.
+
+Drop this into your MCP client's config (e.g. `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "vera-ue": {
+      "command": "python",
+      "args": ["-m", "vera.tools.mcp_server"],
+      "env": { "VERA_UE_PROJECT_DIR": "C:/path/to/YourProject" }
+    }
+  }
+}
+```
+
+Works with any MCP-capable client — **Claude Code**, **Cursor**, **VS Code**
+(Cline / Continue / Copilot), **JetBrains Rider** (AI Assistant), **Windsurf**,
+**Zed**, and more:
 
 | MCP tool | Purpose |
 |---|---|
