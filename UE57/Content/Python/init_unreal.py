@@ -50,20 +50,15 @@ try:
 except Exception as e:
     unreal.log_error("[VERA] Could not load the UI: " + str(e))
 
-try:
-    import vera_enemy  # noqa: F401  — CyberHead AI (only active during PIE)
-except Exception as e:
-    unreal.log_error("[VERA] Could not load vera_enemy: " + str(e))
-
-try:
-    import vera_horror  # noqa: F401  — jungle horror director (PIE only)
-except Exception as e:
-    unreal.log_error("[VERA] Could not load vera_horror: " + str(e))
-
-try:
-    import vera_lava  # noqa: F401  — rule: lava kills and respawns (PIE only)
-except Exception as e:
-    unreal.log_error("[VERA] Could not load vera_lava: " + str(e))
+# Optional demo / minigame modules (PIE only). They are NOT shipped in the
+# packaged plugin, so a missing one is silent; only a real load error is logged.
+for _demo in ("vera_enemy", "vera_horror", "vera_lava"):
+    try:
+        __import__(_demo)  # noqa: F401
+    except ImportError:
+        pass
+    except Exception as e:
+        unreal.log_error(f"[VERA] Could not load {_demo}: {e}")
 
 try:
     import vera_server_launcher  # noqa: F401  — starts vera_server in the background

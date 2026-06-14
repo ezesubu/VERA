@@ -1,7 +1,7 @@
 import os
 import sys
 import json
-import shutil Se
+import shutil
 import subprocess
 import zipfile
 
@@ -11,10 +11,9 @@ PLUGIN_DIR = os.path.join(WORKSPACE_DIR, "Plugin")
 UPLUGIN_PATH = os.path.join(PLUGIN_DIR, "VERA.uplugin")
 PACKAGED_ROOT = os.path.join(WORKSPACE_DIR, "Packaged")
 
-UE_VERSIONS = {    
-    "5.4": r"C:\Program Files\Epic Games\UE_5.4",    
-    "5.5": r"C:\Program Files\Epic Games\UE_5.5",    
-    "5.6": r"C:\Program Files\Epic Games\UE_5.6",
+# Open-source: ship source + one packaged build for the latest UE. Anyone who
+# wants another version clones the repo and builds it themselves.
+UE_VERSIONS = {
     "5.7": r"C:\Program Files\Epic Games\UE_5.7",
 }
 
@@ -34,6 +33,55 @@ def zip_directory(src_dir, zip_path):
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, os.path.dirname(src_dir))
                 zipf.write(file_path, arcname)
+
+_PY_IGNORE = shutil.ignore_patterns(
+    "__pycache__", "*.pyc", "*.pyo",
+    # demo / minigame scripts — NOT part of the VERA tool (they hijack PIE)
+    "vera_enemy.py", "vera_horror.py", "vera_lava.py", "vera_autopilot.py",
+)
+
+# Python deps the brain + UI need, bundled into the plugin (Fab forbids runtime
+# pip installs). Targets the editor's Python (3.11) regardless of the host.
+_BUNDLED_DEPS = ["anthropic>=0.40.0", "openai>=1.40.0", "mcp>=1.2.0", "PySide6"]
+
+
+def assemble_plugin(bundle_deps=True):
+    """Assemble Plugin/Content/Python from the tracked source — the single source
+    of truth — so packaging always ships the CURRENT VERA, and bundle the Python
+    deps into Content/Python/Lib/Win64/site-packages (the Fab layout; UE adds that
+    folder to sys.path automatically, so no runtime pip install is needed)."""
+    src_py = os.path.join(WORKSPACE_DIR, "UE57", "Content", "Python")
+    src_plugins = os.path.join(WORKSPACE_DIR, "UE57", "VERA_Plugins")
+    vera_pkg = os.path.join(WORKSPACE_DIR, "vera")
+    dst_py = os.path.join(PLUGIN_DIR, "Content", "Python")
+
+    print(f"[+] Assembling plugin Content/Python from source...")
+    if os.path.exists(dst_py):
+        shutil.rmtree(dst_py)
+    os.makedirs(dst_py, exist_ok=True)
+
+    # 1) editor scripts + chat UI (init_unreal, vera_ui, vera_bootstrap, vera_chat/, ...)
+    shutil.copytree(src_py, dst_py, ignore=_PY_IGNORE, dirs_exist_ok=True)
+    # 2) the vera/ Python package (importable: UE puts Content/Python on sys.path)
+    shutil.copytree(vera_pkg, os.path.join(dst_py, "vera"), ignore=_PY_IGNORE)
+    # 3) the studio plugins (found at <Content/Python>/VERA_Plugins by the factory)
+    if os.path.isdir(src_plugins):
+        shutil.copytree(src_plugins, os.path.join(dst_py, "VERA_Plugins"), ignore=_PY_IGNORE)
+
+    if bundle_deps:
+        site = os.path.join(dst_py, "Lib", "Win64", "site-packages")
+        os.makedirs(site, exist_ok=True)
+        print(f"[+] Bundling Python deps into {os.path.relpath(site, WORKSPACE_DIR)} ...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", *_BUNDLED_DEPS,
+            "--target", site, "--python-version", "3.11",
+            "--only-binary=:all:", "--upgrade",
+        ])
+    else:
+        print("[i] Skipping dep bundling (bundle_deps=False) — plugin will rely on "
+              "the runtime bootstrap instead. NOT Fab-compliant.")
+    print(f"[+] Plugin assembled at {os.path.relpath(dst_py, WORKSPACE_DIR)}")
+
 
 def build_for_version(version, ue_path):
     run_uat_path = os.path.join(ue_path, "Engine", "Build", "BatchFiles", "RunUAT.bat")
@@ -125,7 +173,15 @@ def main():
     print(f"Plugin Path: {PLUGIN_DIR}")
     
     os.makedirs(PACKAGED_ROOT, exist_ok=True)
-    
+
+    # Assemble Content/Python from source first, so we always package current code.
+    assemble_only = "--assemble-only" in sys.argv
+    bundle_deps = "--no-bundle" not in sys.argv
+    assemble_plugin(bundle_deps=bundle_deps)
+    if assemble_only:
+        print("[i] --assemble-only: plugin assembled, stopping before RunUAT.")
+        return
+
     success_versions = []
     failed_versions = []
     

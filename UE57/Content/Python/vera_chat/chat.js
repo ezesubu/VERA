@@ -8,6 +8,8 @@ let TABS = [];                // [{id,title,provider,model,mode,compact,events:[
 let activeId = null;          // active tab id
 let pendingId = null;         // tab awaiting a backend response (commands serialize)
 let STATE = null;             // mirror of the active tab (provider/model/mode/compact)
+let __online = false;         // backend/editor reachable
+let __version = "";           // editor version (for the logo tooltip)
 let pendingImage = null;      // {data, media_type} attached to the next command
 let COMMANDS = [];            // tool catalog for the / slash menu
 let slashState = null;        // {level, items, idx, cmd} when the / menu is open
@@ -154,9 +156,9 @@ window.veraChat = {
     switch (e.type) {
       case "restore_tabs": return restoreTabs(e);
       case "status": {
-        const st = $("status");
-        st.className = e.online ? "" : "off";
-        st.title = e.online ? ("live · " + (e.version || "UE")) : "offline";
+        __online = !!e.online;
+        __version = e.version || "UE";
+        refreshBrand();
         return;
       }
       case "models": {
@@ -207,6 +209,11 @@ window.veraChat = {
             note.textContent = e.msg;
           }
         }
+        return;
+      }
+      case "local_config": {
+        if ($("lm-url") && e.url) $("lm-url").value = e.url;
+        if ($("lm-timeout") && e.timeout_s) $("lm-timeout").value = Math.round(e.timeout_s / 60);
         return;
       }
       case "commands": { COMMANDS = e.commands || []; if (slashState) renderSlash(); return; }
@@ -566,6 +573,19 @@ function applyModelLabel() {
   const info = MODELS[STATE.provider] || { status: "off" };
   const live = info.status === "local" || info.status === "online";
   $("mp-dot").className = "mp-dot " + (live ? "local" : (info.status === "ok" ? "on" : "off"));
+  refreshBrand();
+}
+
+// The header logo is full amber only when VERA is connected AND a model is ready
+// to start; gray otherwise (offline, or connected but no model picked yet).
+function refreshBrand() {
+  const st = $("status"); if (!st) return;
+  const info = (STATE && MODELS[STATE.provider]) || { status: "off" };
+  const modelReady = !!(STATE && STATE.model) && ["ok", "online", "local"].includes(info.status);
+  const ready = __online && modelReady;
+  st.className = ready ? "" : "off";
+  st.title = ready ? ("ready · " + (__version || "UE"))
+                   : (__online ? "connected — pick a model" : "offline");
 }
 
 function autoSelectModel(prov) {
@@ -768,6 +788,7 @@ function applyProviderStatus(prov, status, detail) {
     case "err": st.className = "st err"; st.textContent = "✕ " + (detail || "error"); break;
     default: if (status) { st.className = "st no"; st.textContent = "○ " + status; }
   }
+  refreshBrand();
 }
 
 function renderDetected(models, status) {
@@ -850,7 +871,11 @@ function wireControls() {
 
   $("lm-detect").onclick = function () {
     this.textContent = "…";
-    if (pybridge) pybridge.list_models("LOCAL"); else requestModels("LOCAL");
+    const url = ($("lm-url").value || "").trim();
+    const mins = parseFloat($("lm-timeout").value);
+    const secs = (!isNaN(mins) && mins > 0) ? String(Math.round(mins * 60)) : "";
+    if (pybridge) { pybridge.set_local_config(url, secs); pybridge.list_models("LOCAL"); }
+    else requestModels("LOCAL");
     setTimeout(() => { if (this.textContent === "…") this.textContent = "Detect"; }, 1500);
   };
 
@@ -988,6 +1013,7 @@ function boot() {
       pybridge.js_ready();
       pybridge.providers();
       pybridge.list_models("LOCAL");
+      pybridge.get_local_config();
       pybridge.plugins();
       pybridge.commands();
     });

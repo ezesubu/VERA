@@ -243,12 +243,16 @@ class OpenAICompatClient:
     """
 
     def __init__(self, base_url: str, api_key: Optional[str], model: str,
-                 *, client: Any = None) -> None:
+                 *, client: Any = None, timeout: Optional[float] = None) -> None:
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
+        self.timeout = timeout
         if client is None:
             import openai  # lazy: only needed in production
-            client = openai.OpenAI(base_url=base_url, api_key=api_key or "not-needed")
+            kwargs: dict = {"base_url": base_url, "api_key": api_key or "not-needed"}
+            if timeout is not None:  # generous for cold local-model loads
+                kwargs["timeout"] = timeout
+            client = openai.OpenAI(**kwargs)
         self._client = client
         self.messages = _Messages(self)

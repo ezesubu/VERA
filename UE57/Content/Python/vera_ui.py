@@ -157,6 +157,15 @@ class PyBridge(QObject):
     def save_credentials(self, provider, key):
         self._window.control_op({"op": "save_credentials", "provider": provider, "key": key})
 
+    # ---- local server config (URL + LLM request timeout) ----
+    @Slot()
+    def get_local_config(self):
+        self._window.control_op({"op": "get_local_config"})
+
+    @Slot(str, str)
+    def set_local_config(self, url, timeout):
+        self._window.control_op({"op": "set_local_config", "url": url, "timeout": timeout})
+
     # ---- compact prompt toggle (per-turn flag, persisted on the window) ----
     @Slot(bool)
     def set_compact(self, on):

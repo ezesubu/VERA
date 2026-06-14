@@ -239,6 +239,10 @@ class VeraServer:
                 return self._list_plugins()
             if op == "set_plugin":
                 return self._set_plugin(payload.get("id"), bool(payload.get("enabled")))
+            if op == "get_local_config":
+                return self._get_local_config()
+            if op == "set_local_config":
+                return self._set_local_config(payload.get("url"), payload.get("timeout"))
         except Exception as e:  # never return a raw stacktrace over the socket
             logger.error("[VeraServer] control op %s failed: %s", op, e)
             return {"type": "error", "msg": f"control op failed: {e}"}
@@ -262,6 +266,40 @@ class VeraServer:
             return {"type": "conn", "provider": provider, "ok": False,
                     "detail": "missing API key"}
         return {"type": "conn", "provider": provider, "ok": True, "detail": "credential present"}
+
+    def _get_local_config(self):
+        """Current local-server settings, for the Setup panel to display."""
+        url = os.environ.get("VERA_LOCAL_BASE_URL") or ""
+        raw = os.environ.get("VERA_LLM_TIMEOUT_S")
+        try:
+            secs = int(float(raw)) if raw else 0
+        except (ValueError, TypeError):
+            secs = 0
+        return {"type": "local_config", "url": url, "timeout_s": secs}
+
+    def _set_local_config(self, url, timeout):
+        """Persist the local server URL and the LLM request timeout (seconds) to
+        .env and os.environ, then drop sessions so the next command rebuilds the
+        loop with the new config. Reuses the same .env upsert as save_credentials."""
+        resp = {"type": "local_config_set", "ok": True}
+        if url is not None:
+            url = str(url).strip()
+            self._write_env_var("VERA_LOCAL_BASE_URL", url)
+            if url:
+                os.environ["VERA_LOCAL_BASE_URL"] = url
+            else:
+                os.environ.pop("VERA_LOCAL_BASE_URL", None)
+            resp["url"] = url
+        if timeout not in (None, ""):
+            try:
+                secs = max(1, int(float(timeout)))
+                self._write_env_var("VERA_LLM_TIMEOUT_S", str(secs))
+                os.environ["VERA_LLM_TIMEOUT_S"] = str(secs)
+                resp["timeout_s"] = secs
+            except (ValueError, TypeError):
+                resp["ok"] = False
+        self._sessions = {}  # next command rebuilds the loop with the new config
+        return resp
 
     def _save_credentials(self, provider, key):
         """Writes/updates the provider's key in the repo .env and in

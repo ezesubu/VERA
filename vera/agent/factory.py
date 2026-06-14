@@ -41,6 +41,17 @@ def _repo_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def llm_timeout_seconds() -> float:
+    """LLM request timeout in seconds (env VERA_LLM_TIMEOUT_S). Generous default so
+    a cold local-model load (which can take minutes) is not killed mid-request; the
+    user raises it in the Setup panel to match their machine."""
+    raw = os.environ.get("VERA_LLM_TIMEOUT_S")
+    try:
+        return float(raw) if raw else 600.0
+    except (ValueError, TypeError):
+        return 600.0
+
+
 def deps_dir() -> str:
     """Where vendored pip deps live (on sys.path via init_unreal.py). Plugins that
     declare `deps` are installed here when enabled. Override with VERA_DEPS_DIR."""
@@ -48,14 +59,27 @@ def deps_dir() -> str:
 
 
 def _default_plugins_dir() -> str:
-    """Resolve the plugins directory. Order: env VERA_PLUGINS_DIR, else
-    <UE project root>/VERA_Plugins (root from env VERA_PROJECT_ROOT, default
-    <repo>/UE57)."""
+    """Locate VERA_Plugins, portable across the dev project and the packaged plugin.
+
+    Order: env VERA_PLUGINS_DIR; else the first existing of
+    <VERA_PROJECT_ROOT|repo/UE57>/VERA_Plugins (dev project) and
+    <repo>/VERA_Plugins (packaged plugin: this file is Content/Python/vera/agent/
+    factory.py, so _repo_root() is Content/Python and the studio plugins sit beside
+    it)."""
     explicit = os.environ.get("VERA_PLUGINS_DIR")
     if explicit:
         return explicit
-    root = os.environ.get("VERA_PROJECT_ROOT") or os.path.join(_repo_root(), "UE57")
-    return os.path.join(root, "VERA_Plugins")
+    repo = _repo_root()
+    candidates = []
+    root = os.environ.get("VERA_PROJECT_ROOT")
+    if root:
+        candidates.append(os.path.join(root, "VERA_Plugins"))
+    candidates.append(os.path.join(repo, "UE57", "VERA_Plugins"))  # dev project
+    candidates.append(os.path.join(repo, "VERA_Plugins"))          # packaged plugin
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[-1]
 
 
 PLUGINS_DIR = _default_plugins_dir()
@@ -151,7 +175,7 @@ def make_llm_client(provider: str, model: str):
             "(set VERA_LOCAL_BASE_URL to your local server's /v1 URL)")
     env = spec.get("env")
     key = os.environ.get(env) if env else None
-    return OpenAICompatClient(base_url, key, model)
+    return OpenAICompatClient(base_url, key, model, timeout=llm_timeout_seconds())
 
 
 def list_tool_specs() -> list[dict]:

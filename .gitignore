@@ -43,7 +43,13 @@ UE57/*.png
 # --- Not the product: build outputs, vendored deps, experiments ---
 Packaged/
 .ue_deps/
-Plugin/
+# VERA plugin: track the skeleton (.uplugin, Source/, Config/, Resources/).
+# Content/Python is assembled from source by PackageVERA.py; build dirs are generated.
+Plugin/Content/
+Plugin/Binaries/
+Plugin/Intermediate/
+Plugin/Saved/
+Plugin/Build/
 scratch/
 examples/
 .superpowers/

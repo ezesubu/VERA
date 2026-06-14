@@ -81,8 +81,11 @@
         <input value="" placeholder="http://localhost:1234/v1" id="lm-url">
         <button id="lm-detect">Detect</button>
       </div>
+      <div class="field">
+        <input type="number" min="1" step="1" id="lm-timeout" placeholder="timeout (min) — first load can take a while">
+      </div>
       <div class="detected" id="lm-list"></div>
-      <div class="tip">For solid tool-calling use <code>Qwen2.5-Coder-32B</code> or <code>Llama-3.3-70B</code>. Load one in LM Studio.</div>
+      <div class="tip">The first request <b>loads the model</b> — a cold start can take minutes. Set the timeout to what your machine needs (e.g. <code>15</code>). For tool-calling use <code>Qwen2.5-Coder-32B</code> or a 30B+ model — small models ramble.</div>
       <label class="toggle"><input type="checkbox" id="opt-compact"><span class="tg"></span><span class="tg-lbl">Compact prompt <small>shorter system prompt — better for small local models</small></span></label>
     </div>
 
@@ -124,28 +127,28 @@
 
     <div class="s-pane pact-pane" data-pane="support" hidden>
       <div class="pact2">
-        <div class="pact2-glow"></div>
         <div class="pact2-hero">
           <div class="pact2-heart">♥</div>
           <h3 class="pact2-title">The Co-Pilot Pact</h3>
-          <div class="pact2-sub">a small deal between you &amp; the maker</div>
+          <div class="pact2-sub">a quiet pact — keep the agent alive</div>
         </div>
         <div class="pact2-letter">
-          <p>VERA is built by one person — <b>maVERAick</b> — on late nights and real coffee, with no studio behind it.</p>
-          <p>If the <span class="hl">Auto-Fixer</span> caught a bug before it cost you an afternoon — or VERA just saved your keyboard from the wall — that's our pact working.</p>
-          <p>Toss in what a coffee costs and you keep the updates coming, the tools sharp, and VERA <b>free &amp; local</b> for everyone.</p>
+          <p>VERA is an independent project — no studio, no investors, no roadmap handed down from above. Just an agent, set loose in your editor.</p>
+          <p>If the <span class="hl">Auto-Fixer</span> caught a bug before it cost you an afternoon — or VERA just saved your keyboard from the wall — that's it earning its keep.</p>
+          <p>Drop in what a coffee costs and the updates keep coming, the tools stay sharp, and VERA stays <b>free &amp; local</b> for everyone.</p>
         </div>
         <ul class="pact2-keeps">
           <li><span>⚡</span> New tools &amp; sharper fixes</li>
           <li><span>🛡️</span> Stays free, local, yours</li>
-          <li><span>♥</span> A maker who reads every message</li>
+          <li><span>◇</span> Every coin goes straight back in</li>
         </ul>
         <div class="pact2-btns">
-          <a class="pact2-btn primary" href="https://ko-fi.com/maveraick"><span class="i">💎</span><span class="t">Support VERA</span><span class="s">monthly · or one-off</span></a>
+          <a class="pact2-btn primary" href="https://www.patreon.com/maVERAick/gift"><span class="i">💎</span><span class="t">Support VERA</span><span class="s">Patreon · monthly or gift</span></a>
+          <a class="pact2-btn kofi" href="https://ko-fi.com/maveraick"><span class="i">☕</span><span class="t">Tip on Ko-fi</span><span class="s">one-off · no account</span></a>
           <a class="pact2-btn beer" href="https://buymeacoffee.com/maveraick"><span class="i">🍺</span><span class="t">Buy a Beer</span><span class="s">a one-time thanks</span></a>
           <a class="pact2-btn discord" href="https://discord.gg/ZxG8wbRp"><span class="i">💬</span><span class="t">Join the Discord</span><span class="s">free · come say hi</span></a>
         </div>
-        <div class="pact2-sign">— maVERAick</div>
+        <div class="pact2-sign">the agent thanks you ◇</div>
       </div>
     </div><!-- /support pane -->
   </div>

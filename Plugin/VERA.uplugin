@@ -1,0 +1,31 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "VERA",
+	"Description": "VERA (Virtual Engine Reasoning Agent) - an AI co-pilot inside the Unreal Editor. Chat with an LLM that inspects your level and automates editor tasks through tools. Works with OpenAI, Anthropic, or any local OpenAI-compatible server.",
+	"Category": "Editor",
+	"CreatedBy": "maVERAick",
+	"CreatedByURL": "https://www.patreon.com/maVERAick",
+	"DocsURL": "https://github.com/maVERAick/VERA/blob/main/README.md",
+	"MarketplaceURL": "",
+	"SupportURL": "https://discord.gg/ZxG8wbRp",
+	"EngineVersion": "5.7.0",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "VERA",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		}
+	]
+}

@@ -70,6 +70,33 @@ def test_make_llm_client_unknown_provider_raises():
         factory.make_llm_client("NOPE", "x")
 
 
+def test_llm_timeout_default_and_env(monkeypatch):
+    monkeypatch.delenv("VERA_LLM_TIMEOUT_S", raising=False)
+    assert factory.llm_timeout_seconds() == 600.0          # generous default
+    monkeypatch.setenv("VERA_LLM_TIMEOUT_S", "900")
+    assert factory.llm_timeout_seconds() == 900.0          # user's 15 min
+    monkeypatch.setenv("VERA_LLM_TIMEOUT_S", "garbage")
+    assert factory.llm_timeout_seconds() == 600.0          # bad value -> default
+
+
+def test_make_llm_client_passes_timeout(monkeypatch):
+    import sys, types
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, *a, **k):
+            captured.update(k)
+
+    fake = types.ModuleType("openai")
+    fake.OpenAI = FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake)
+    monkeypatch.setenv("VERA_LOCAL_BASE_URL", "http://localhost:1234/v1")
+    monkeypatch.setenv("VERA_LLM_TIMEOUT_S", "720")
+
+    factory.make_llm_client("LOCAL", "qwen-32b")
+    assert captured.get("timeout") == 720.0
+
+
 def test_build_agent_loop_accepts_provider_and_model(monkeypatch):
     import sys, types
 

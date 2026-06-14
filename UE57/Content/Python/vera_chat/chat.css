@@ -55,7 +55,9 @@ body::before{
   font-family:var(--mono); font-weight:600; font-size:17px; letter-spacing:5px;
   color:var(--ink); text-shadow:0 0 18px var(--amber-glow);
 }
-#brand .mark b{color:var(--amber)}
+#brand .mark b{color:var(--amber); transition:color .3s}
+/* the R follows the logo: gray when disconnected, amber when ready */
+#status.off ~ .mark b{color:var(--ink-faint)}
 #brand .sub{font-family:var(--mono); font-size:9px; letter-spacing:2px; color:var(--ink-faint); text-transform:uppercase}
 
 /* V logo (Unreal emblem with a V) = brand + connection status.
@@ -344,32 +346,29 @@ body::before{
 .st.ok{color:var(--ok)} .st.no{color:var(--ink-faint)} .st.live{color:var(--teal)} .st.err{color:var(--danger)}
 /* ---- The Co-Pilot Pact (Support tab) ---- */
 .pact-pane{position:relative}
-.pact2{position:relative;text-align:center;padding:4px 2px 18px}
-.pact2-glow{position:absolute;top:-12px;left:50%;transform:translateX(-50%);width:300px;height:210px;
-  background:radial-gradient(ellipse at center,var(--amber-glow),transparent 70%);filter:blur(10px);pointer-events:none;z-index:0}
-.pact2 > *{position:relative;z-index:1}
+.pact2{position:relative;text-align:center;padding:0 2px 14px}
 
-.pact2-hero{padding:16px 0 4px}
-.pact2-heart{font-size:36px;line-height:1;color:var(--amber);filter:drop-shadow(0 0 12px var(--amber-glow));
+.pact2-hero{padding:6px 0 2px}
+.pact2-heart{font-size:30px;line-height:1;color:var(--amber);filter:drop-shadow(0 0 12px var(--amber-glow));
   animation:pactBeat 2.6s ease-in-out infinite}
 @keyframes pactBeat{0%,100%{transform:scale(1)}7%{transform:scale(1.2)}14%{transform:scale(1.02)}21%{transform:scale(1.12)}30%{transform:scale(1)}}
-.pact2-title{font-family:var(--mono);font-size:18px;letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:11px 0 3px;
+.pact2-title{font-family:var(--mono);font-size:16px;letter-spacing:2.5px;text-transform:uppercase;font-weight:600;margin:7px 0 2px;
   background:linear-gradient(180deg,#ffd98a,var(--amber-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
 .pact2-sub{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-faint)}
 
-.pact2-letter{font-family:var(--sans);font-size:12.5px;line-height:1.65;color:var(--ink-dim);text-align:left;margin:16px 2px;
-  padding:14px;background:linear-gradient(180deg,#16110b,#0d0b08);border:1px solid var(--line);border-radius:12px}
+.pact2-letter{font-family:var(--sans);font-size:12px;line-height:1.6;color:var(--ink-dim);text-align:left;margin:11px 2px;
+  padding:12px;background:linear-gradient(180deg,#16110b,#0d0b08);border:1px solid var(--line);border-radius:12px}
 .pact2-letter p{margin:0 0 9px}
 .pact2-letter p:last-child{margin:0}
 .pact2-letter b{color:var(--amber)}
 .pact2-letter .hl{color:var(--teal)}
 
-.pact2-keeps{list-style:none;margin:0 4px 16px;padding:0;display:grid;gap:8px;text-align:left}
+.pact2-keeps{list-style:none;margin:0 4px 12px;padding:0;display:grid;gap:6px;text-align:left}
 .pact2-keeps li{font-family:var(--sans);font-size:11.5px;color:var(--ink-dim);display:flex;align-items:center;gap:10px}
 .pact2-keeps li span{width:18px;text-align:center}
 
-.pact2-btns{display:grid;gap:9px;margin:0 2px}
-.pact2-btn{display:flex;align-items:center;gap:12px;text-decoration:none;text-align:left;padding:11px 13px;border-radius:11px;
+.pact2-btns{display:grid;gap:7px;margin:0 2px}
+.pact2-btn{display:flex;align-items:center;gap:12px;text-decoration:none;text-align:left;padding:9px 12px;border-radius:11px;
   border:1px solid var(--line);background:var(--raised-2);transition:transform .15s ease,border-color .15s,box-shadow .25s,background .15s}
 .pact2-btn .i{font-size:18px;line-height:1}
 .pact2-btn .t{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--ink);flex:1}
@@ -381,21 +380,20 @@ body::before{
 .pact2-btn.primary:hover{box-shadow:0 0 0 1px var(--amber),0 10px 28px -8px var(--amber-deep)}
 @keyframes pactPulse{0%,100%{box-shadow:0 0 0 1px var(--amber-glow),0 6px 22px -12px var(--amber-deep)}
   50%{box-shadow:0 0 0 1px rgba(255,176,46,.34),0 9px 26px -8px var(--amber-deep)}}
+.pact2-btn.kofi:hover{border-color:#29abe0;box-shadow:0 6px 22px -12px #29abe0}
 .pact2-btn.beer:hover{border-color:#e8a33c;box-shadow:0 6px 22px -12px #e8a33c}
 .pact2-btn.discord:hover{border-color:#5865F2;box-shadow:0 6px 22px -12px #5865F2}
 
-.pact2-sign{font-family:var(--mono);font-style:italic;font-size:12px;color:var(--ink-dim);text-align:right;margin:16px 8px 0;opacity:.85}
+.pact2-sign{font-family:var(--mono);font-style:italic;font-size:12px;color:var(--ink-dim);text-align:right;margin:11px 8px 0;opacity:.85}
 
 /* staggered reveal each time the Support tab is shown */
 .pact-pane:not([hidden]) .pact2 > *{animation:pactRise .5s both}
-.pact-pane:not([hidden]) .pact2-glow{animation:pactGlowIn .9s both}
 .pact-pane:not([hidden]) .pact2-hero{animation-delay:.02s}
 .pact-pane:not([hidden]) .pact2-letter{animation-delay:.10s}
 .pact-pane:not([hidden]) .pact2-keeps{animation-delay:.16s}
 .pact-pane:not([hidden]) .pact2-btns{animation-delay:.22s}
 .pact-pane:not([hidden]) .pact2-sign{animation-delay:.30s}
 @keyframes pactRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-@keyframes pactGlowIn{from{opacity:0}to{opacity:1}}
 .field{display:flex;gap:7px;margin-top:8px}
 .field input{flex:1;background:#0c0e11;border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--ink);font-family:var(--mono);font-size:12px;outline:none;min-width:0}
 .field input:focus{border-color:var(--amber-deep)}
