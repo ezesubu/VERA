@@ -11,37 +11,33 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from vera.core.memory import SemanticMemory
-from vera.cache.coord_registry import CoordRegistry
-
 logger = logging.getLogger(__name__)
 
 
 class Blackboard:
-    """
-    Shared memory space for VERA agents.
-    """
+    """Shared editor state + the progress channel toward the UI.
+
+    The AgentLoop uses this only for `progress_callback` / `report_progress`. The
+    legacy zero-token caches (CoordRegistry / SemanticMemory) were removed along
+    with the old agent crew."""
 
     def __init__(self):
-        # Persistent Memory (Zero-token caches)
-        self.coord_registry = CoordRegistry()
-        self.action_cache = SemanticMemory()
         self.task_queue = []
 
         # Ephemeral Memory (Current Unreal Editor State)
         self._context: Dict[str, Any] = {}
         self._context_timestamps: Dict[str, float] = {}
 
-        # Canal de progreso hacia la UI (lo conecta vera_server por conexión)
+        # Progress channel toward the UI (vera_server wires it up per connection)
         self.progress_callback = None
 
     def report_progress(self, agent: str, msg: str) -> None:
-        """Emite un evento de progreso hacia la UI. Sin callback conectado es no-op;
-        un callback roto jamás interrumpe a los agentes."""
+        """Emits a progress event toward the UI. With no callback connected it's a
+        no-op; a broken callback never interrupts the agents."""
         self._emit({"type": "progress", "agent": agent, "msg": msg})
 
     def report_image(self, path: str) -> None:
-        """Emite una imagen (captura del viewport) hacia la UI."""
+        """Emits an image (viewport capture) toward the UI."""
         self._emit({"type": "image", "path": path})
 
     def _emit(self, event: dict) -> None:
@@ -51,7 +47,7 @@ class Blackboard:
         try:
             cb(event)
         except Exception:
-            logger.warning("[Blackboard] progress_callback falló; se ignora", exc_info=True)
+            logger.warning("[Blackboard] progress_callback failed; ignored", exc_info=True)
 
     def enqueue_task(self, task: str):
         self.task_queue.append(task)

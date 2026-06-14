@@ -3,7 +3,6 @@ import logging
 import os
 import socket
 import threading
-import importlib
 
 from vera.agent.factory import make_llm_client
 
@@ -14,42 +13,43 @@ DEFAULT_PROVIDER = "ANTHROPIC"
 DEFAULT_MODEL = "claude-opus-4-8"
 DEFAULT_MODE = "ask"
 
-CONFIRM_TIMEOUT = 120.0  # segundos para que el usuario apruebe una accion destructiva
-MAX_CONFIRM_BYTES = 4096  # una respuesta legitima ({"approve": true}) pesa < 100 bytes
+CONFIRM_TIMEOUT = 300.0  # seconds to approve a destructive action (Stop is always available)
+MAX_CONFIRM_BYTES = 4096  # a legitimate response ({"approve": true}) weighs < 100 bytes
 
 
 class VeraServer:
-    """Backend de agentes de VERA. Protocolo streaming: por cada comando responde
-    N líneas JSON (progress/image/error) y SIEMPRE una final:
+    """VERA agent backend. Streaming protocol: for each command it replies with
+    N JSON lines (progress/image/error) and ALWAYS a final one:
         {"type":"final","status":"success"|"error","msg":"..."}
-    Asunción: un solo cliente UI activo a la vez (progress_callback apunta a la
-    conexión en curso)."""
+    Assumption: a single active UI client at a time (progress_callback points to
+    the in-flight connection)."""
 
     def __init__(self, host="127.0.0.1", port=9880, blackboard=None, manager=None):
         self.host = host
         self.port = port
-        # .env primero: ManagerAgent construye su cliente LLM en __init__ y lee la key del entorno
+        # .env first: ManagerAgent builds its LLM client in __init__ and reads the key from the environment
         self._load_env()
-        # Inyectables para tests; en producción se crean los reales.
+        # Injectable for tests; in production the real ones are created.
         if blackboard is None:
             from vera.core.blackboard import Blackboard
             blackboard = Blackboard()
         self.blackboard = blackboard
-        if manager is None:
-            import vera.core.manager_agent
-            importlib.reload(vera.core.manager_agent)
-            from vera.core.manager_agent import ManagerAgent
-            manager = ManagerAgent(self.blackboard)
+        # Legacy manager crew removed — the AgentLoop is the only brain. `manager`
+        # stays injectable for tests but is no longer constructed in production.
         self.manager = manager
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._stop = threading.Event()
         self._busy = threading.Lock()
+        # Set by the {"op":"cancel"} control op; the running AgentLoop checks it
+        # between iterations and stops cleanly. Control ops don't take _busy, so
+        # a cancel can arrive while a command is streaming.
+        self._cancel = threading.Event()
         # One persistent AgentSession per tab/session_id (each tab = its own
         # conversation context). entry = {"session": AgentSession, "compact": bool}.
         self._sessions = {}
 
-    # ---- emisión ----
+    # ---- emission ----
 
     def _make_emitter(self, conn, lock):
         def emit(event):
@@ -58,24 +58,24 @@ class VeraServer:
         return emit
 
     def _make_confirm(self, conn, emit):
-        """Gate destructivo con round-trip al cliente: emite un evento `question`
-        y espera UNA línea JSON {"approve": bool} por el mismo socket.
-        Ante la duda (timeout, desconexión, JSON inválido) DENIEGA.
-        VERA_AUTO_APPROVE=1 saltea el gate (autopilot/testing).
+        """Destructive gate with a round-trip to the client: emits a `question`
+        event and waits for ONE JSON line {"approve": bool} over the same socket.
+        When in doubt (timeout, disconnect, invalid JSON) it DENIES.
+        VERA_AUTO_APPROVE=1 skips the gate (autopilot/testing).
 
-        Invariante: mientras el gate espera en recv, NINGÚN hilo debe emitir por
-        este socket (hoy se cumple: la sesión serializa los comandos y no hay
-        watchers; revisar al implementar Fase 3).
-        Con varios tool_use destructivos en un turno, las preguntas viajan en
-        serie (el loop ejecuta tools secuencialmente) — ese orden es parte del
-        contrato del protocolo."""
+        Invariant: while the gate waits on recv, NO thread may emit over this
+        socket (holds today: the session serializes commands and there are no
+        watchers; revisit when implementing Phase 3).
+        With several destructive tool_use calls in one turn, the questions travel
+        serially (the loop executes tools sequentially) — that ordering is part of
+        the protocol contract."""
         def confirm(tool, args):
             if os.environ.get("VERA_AUTO_APPROVE"):
                 return True
             emit({
                 "type": "question",
                 "tool": tool.name,
-                "msg": f"VERA quiere ejecutar la acción destructiva '{tool.name}'. ¿Aprobar?",
+                "msg": f"VERA wants to run the destructive action '{tool.name}'. Approve?",
                 "args_preview": str(args)[:500],
             })
             try:
@@ -83,14 +83,14 @@ class VeraServer:
                 data = b""
                 while not data.endswith(b"\n"):
                     if len(data) >= MAX_CONFIRM_BYTES:
-                        return False  # respuesta sin \n demasiado larga → denegar
+                        return False  # response without \n too long → deny
                     chunk = conn.recv(4096)
                     if not chunk:
-                        return False  # cliente desconectado → denegar
+                        return False  # client disconnected → deny
                     data += chunk
                 return bool(json.loads(data.decode("utf-8").strip()).get("approve"))
             except (OSError, ValueError):
-                return False  # timeout o respuesta inválida → denegar
+                return False  # timeout or invalid response → deny
             finally:
                 try:
                     conn.settimeout(None)
@@ -114,21 +114,28 @@ class VeraServer:
 
             payload = json.loads(data.decode("utf-8").strip())
 
-            # Control ops: NO son comandos del agente. Una línea JSON con "op" →
-            # una línea JSON de respuesta. No tocan el lock de ocupado.
+            # Control ops: NOT agent commands. One JSON line with "op" →
+            # one JSON line of response. They don't touch the busy lock.
             if "op" in payload:
                 emit(self._handle_control_op(payload))
                 return
 
             command = payload.get("command", "")
             if not command:
-                emit({"type": "final", "status": "error", "msg": "Comando vacío."})
+                emit({"type": "final", "status": "error", "msg": "Empty command."})
                 return
             provider = payload.get("provider") or DEFAULT_PROVIDER
             model = payload.get("model") or DEFAULT_MODEL
             mode = payload.get("mode") or DEFAULT_MODE
             session_id = payload.get("session_id") or "default"
-            compact = bool(payload.get("compact", False))
+            # Optional attached image: {"data": "<base64>", "media_type": "..."}.
+            # Validate lightly — a dict with non-empty data; otherwise ignore it.
+            image = payload.get("image")
+            if not (isinstance(image, dict) and image.get("data")):
+                image = None
+            # Compact prompt is automatic for LOCAL providers (small models choke on
+            # the long prompt); cloud can still opt in via the toggle.
+            compact = bool(payload.get("compact", False)) or provider == "LOCAL"
 
             if command.strip().lower() in ("hello world", "hello world!"):
                 emit({"type": "final", "status": "success",
@@ -137,54 +144,28 @@ class VeraServer:
 
             if not self._busy.acquire(blocking=False):
                 emit({"type": "final", "status": "error",
-                      "msg": "VERA está ocupada con otro comando. Esperá a que termine."})
+                      "msg": "VERA is busy with another command. Wait for it to finish."})
                 return
 
             self.blackboard.progress_callback = emit
             try:
-                # Cerebro agéntico: sesión persistente (historial entre comandos),
-                # Manager viejo como fallback si el flag está apagado.
-                if os.environ.get("VERA_USE_AGENT_LOOP"):
-                    session = self._agent_session(session_id, provider, model, compact)
-                    self._reconfigure_session(session_id, provider, model)
-                    if mode == "auto":
-                        confirm = lambda tool, args: True  # noqa: E731
-                    else:
-                        confirm = self._make_confirm(conn, emit)
-                    result = session.run(
-                        command, emit=emit, confirm=confirm,
-                        include_destructive=self._include_destructive_for_mode(mode))
-                    success = result.get("status") == "success"
-                    return
-
-                # Fast keyword route: bypass manager_agent caching issue
-                lower_cmd = command.lower()
-                analyzer_kw = ["missing", "analyze", "analysis", "scan", "niagara", "acf", "gas",
-                               "what assets", "que falta", "assets are", "plugins", "installed",
-                               "detect", "check for", "falta", "tiene", "project has"]
-                if any(kw in lower_cmd for kw in analyzer_kw):
-                    emit({"type": "progress", "agent": "Analyzer", "msg": "scanning project"})
-                    from vera.core.project_analyzer_agent import ProjectAnalyzerAgent
-                    analyzer = ProjectAnalyzerAgent(self.blackboard)
-                    result = analyzer.analyze()
-                    if result and result.get("summary"):
-                        success = True
-                        emit({"type": "final", "status": "success", "msg": result["summary"]})
-                    else:
-                        success = False
-                        emit({"type": "final", "status": "error", "msg": "No se pudo analizar el proyecto."})
-                    return
-
-                success = self.manager.execute_command(command)
-                if success:
-                    emit({"type": "final", "status": "success", "msg": "Done."})
+                # The AgentLoop is the only brain (the legacy manager crew was
+                # removed). session.run emits the final event itself.
+                session = self._agent_session(session_id, provider, model, compact)
+                self._reconfigure_session(session_id, provider, model)
+                if mode == "auto":
+                    confirm = lambda tool, args: True  # noqa: E731
                 else:
-                    emit({"type": "final", "status": "error",
-                          "msg": "No pude completar el comando. Revisá la timeline y los logs del servidor."})
+                    confirm = self._make_confirm(conn, emit)
+                self._cancel.clear()
+                session.run(
+                    command, emit=emit, confirm=confirm,
+                    include_destructive=self._include_destructive_for_mode(mode),
+                    should_stop=lambda: self._cancel.is_set(), image=image)
             except Exception as llm_error:
                 logger.error(f"[VeraServer] Error: {llm_error}")
                 emit({"type": "final", "status": "error",
-                      "msg": f"Error procesando el comando: {llm_error}"})
+                      "msg": f"Error processing the command: {llm_error}"})
             finally:
                 self.blackboard.progress_callback = None
                 self._busy.release()
@@ -220,7 +201,7 @@ class VeraServer:
 
     @staticmethod
     def _include_destructive_for_mode(mode):
-        """readonly esconde las tools destructivas del schema que ve el modelo."""
+        """readonly hides the destructive tools from the schema the model sees."""
         return mode != "readonly"
 
     # ---- control ops ----
@@ -230,9 +211,14 @@ class VeraServer:
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
 
     def _handle_control_op(self, payload):
-        """Despacha una control op (línea JSON con "op") → un dict de respuesta."""
+        """Dispatches a control op (JSON line with "op") → a response dict."""
         op = payload.get("op")
         try:
+            if op == "cancel":
+                # Signal the in-flight AgentLoop to stop between iterations.
+                # Handled without the busy lock so it arrives mid-command.
+                self._cancel.set()
+                return {"type": "cancelled", "ok": True}
             if op == "providers":
                 from vera.agent.models import list_providers
                 return {"type": "providers", "providers": list_providers()}
@@ -246,48 +232,51 @@ class VeraServer:
                 return self._test_connection(payload.get("provider"))
             if op == "save_credentials":
                 return self._save_credentials(payload.get("provider"), payload.get("key"))
+            if op == "commands":
+                from vera.agent.factory import list_tool_specs
+                return {"type": "commands", "commands": list_tool_specs()}
             if op == "plugins":
                 return self._list_plugins()
             if op == "set_plugin":
                 return self._set_plugin(payload.get("id"), bool(payload.get("enabled")))
-        except Exception as e:  # nunca devolver un stacktrace crudo por el socket
-            logger.error("[VeraServer] control op %s falló: %s", op, e)
-            return {"type": "error", "msg": f"control op falló: {e}"}
-        return {"type": "error", "msg": f"op desconocida: {op}"}
+        except Exception as e:  # never return a raw stacktrace over the socket
+            logger.error("[VeraServer] control op %s failed: %s", op, e)
+            return {"type": "error", "msg": f"control op failed: {e}"}
+        return {"type": "error", "msg": f"unknown op: {op}"}
 
     def _test_connection(self, provider):
-        """Verifica disponibilidad sin correr el agente. LOCAL → pinga /models;
-        el resto → chequea que la credencial esté presente."""
+        """Checks availability without running the agent. LOCAL → pings /models;
+        the rest → checks that the credential is present."""
         from vera.agent import models
         spec = models.PROVIDERS.get(provider)
         if spec is None:
             return {"type": "conn", "provider": provider, "ok": False,
-                    "detail": "proveedor desconocido"}
+                    "detail": "unknown provider"}
         if spec.get("discover"):
             out = models.list_models(provider)
             ok = out["status"] == "online"
-            detail = (f"{len(out['models'])} modelo(s) cargado(s)" if ok
-                      else "LM Studio no responde (cargá un modelo)")
+            detail = (f"{len(out['models'])} model(s) loaded" if ok
+                      else "LM Studio not responding (load a model)")
             return {"type": "conn", "provider": provider, "ok": ok, "detail": detail}
         if not models.has_key(provider):
             return {"type": "conn", "provider": provider, "ok": False,
-                    "detail": "falta la API key"}
-        return {"type": "conn", "provider": provider, "ok": True, "detail": "credencial presente"}
+                    "detail": "missing API key"}
+        return {"type": "conn", "provider": provider, "ok": True, "detail": "credential present"}
 
     def _save_credentials(self, provider, key):
-        """Escribe/actualiza la key del proveedor en el .env del repo y en
-        os.environ. La key NUNCA se devuelve."""
+        """Writes/updates the provider's key in the repo .env and in
+        os.environ. The key is NEVER returned."""
         from vera.agent.models import PROVIDERS
         spec = PROVIDERS.get(provider)
         env_name = spec.get("env") if spec else None
         if not env_name:
-            return {"type": "error", "msg": f"el proveedor {provider} no usa API key"}
+            return {"type": "error", "msg": f"provider {provider} does not use an API key"}
         self._write_env_var(env_name, key)
         os.environ[env_name] = key
         return {"type": "saved", "provider": provider, "ok": True}
 
     def _write_env_var(self, name, value):
-        """Upsert de una variable en el .env (preserva el resto de las líneas)."""
+        """Upserts a variable in the .env (preserves the remaining lines)."""
         path = self._env_path()
         lines = []
         if os.path.exists(path):
@@ -315,7 +304,7 @@ class VeraServer:
         return factory.PLUGINS_DIR
 
     def _list_plugins(self):
-        """Lista los plugins descubiertos con sus tools y si traen skill."""
+        """Lists the discovered plugins with their tools and whether they ship a skill."""
         from vera.agent.plugins import discover_plugins
         out = []
         for p in discover_plugins(self._plugins_dir()):
@@ -332,15 +321,34 @@ class VeraServer:
         return {"type": "plugins", "plugins": out}
 
     def _set_plugin(self, plugin_id, enabled):
-        """Persiste el estado del plugin y descarta la sesión para que el próximo
-        comando rearme el registry/loop con el cambio aplicado."""
-        from vera.agent.plugins import set_plugin_enabled
+        """Persists the plugin state and discards the session so the next command
+        rebuilds the registry/loop with the change applied. When enabling a plugin
+        that declares pip `deps`, installs the missing ones (one time) and reports
+        it to the user — no silent magic."""
+        from vera.agent.plugins import (set_plugin_enabled, discover_plugins,
+                                         plugin_missing_deps, install_packages)
+        from vera.agent import factory
         ok = set_plugin_enabled(self._plugins_dir(), plugin_id, enabled)
+        msg = None
+        if ok and enabled:
+            plugin = next((p for p in discover_plugins(self._plugins_dir())
+                           if p.id == plugin_id), None)
+            missing = plugin_missing_deps(plugin) if plugin else []
+            if missing:
+                logger.info("[VeraServer] installing deps for %s: %s", plugin_id, missing)
+                installed = install_packages(missing, factory.deps_dir())
+                msg = (f"Installed {', '.join(missing)} for {plugin.name}."
+                       if installed else
+                       f"Could not install {', '.join(missing)} for {plugin.name} "
+                       f"— check the server log.")
         if ok:
             self._sessions = {}  # all tabs rebuild with the new plugin set next turn
-        return {"type": "plugin_set", "id": plugin_id, "enabled": enabled, "ok": ok}
+        resp = {"type": "plugin_set", "id": plugin_id, "enabled": enabled, "ok": ok}
+        if msg:
+            resp["msg"] = msg
+        return resp
 
-    # ---- ciclo de vida ----
+    # ---- lifecycle ----
 
     def _load_env(self):
         env_path = os.path.join(
@@ -375,7 +383,7 @@ class VeraServer:
             threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
 
     def start_in_thread(self):
-        """Para tests: bindea (port=0 → efímero) y acepta en un hilo. Devuelve el puerto."""
+        """For tests: binds (port=0 → ephemeral) and accepts on a thread. Returns the port."""
         port = self._bind()
         threading.Thread(target=self._accept_loop, daemon=True).start()
         return port
@@ -385,7 +393,7 @@ class VeraServer:
         self.server_socket.close()
 
     def start(self):
-        """Modo producción: bloqueante."""
+        """Production mode: blocking."""
         self._bind()
         logger.info(f"[VeraServer] VERA streaming server on {self.host}:{self.port}")
         self._accept_loop()

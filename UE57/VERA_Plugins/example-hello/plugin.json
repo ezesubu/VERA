@@ -1,7 +1,0 @@
-{
-  "name": "Example Hello",
-  "version": "1.0.0",
-  "author": "VERA team",
-  "description": "Demo studio plugin: a trivial greeting tool plus a studio convention skill.",
-  "enabled": false
-}

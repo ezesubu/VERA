@@ -9,7 +9,7 @@ description = "Visual Editor Reasoning Agent — Your AI co-pilot inside Unreal 
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-keywords = ["unreal-engine", "ai-agent", "automation", "computer-use", "gemini"]
+keywords = ["unreal-engine", "ai-agent", "automation", "llm", "mcp", "agent-loop"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -19,19 +19,19 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "pyautogui>=0.9.54",
-    "Pillow>=10.0.0",
-    "opencv-python>=4.8.0",
-    "pytesseract>=0.3.10",
-    "google-genai>=0.2.0",
-    "sentence-transformers>=3.0.0",
-    "numpy>=1.24.0",
-    "faiss-cpu>=1.7.4",
+    # LLM brain (AgentLoop): native Anthropic + an OpenAI-compatible adapter
+    # (OpenAI proper, Gemini's OpenAI endpoint, and any local server: LM Studio,
+    # Ollama, llama.cpp, vLLM, ...).
+    "anthropic>=0.40.0",
+    "openai>=1.40.0",
+    # MCP bridge (Claude Code / other MCP clients ↔ the editor).
+    "mcp>=1.2.0",
+    # CLI + .env loading.
     "click>=8.1.0",
     "rich>=13.0.0",
-    "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
-    "mcp>=1.2.0",
+    # NOTE: the chat UI uses PySide6, auto-installed into Unreal's embedded Python
+    # at first launch (it targets the engine interpreter, not this environment).
 ]
 
 [project.optional-dependencies]
