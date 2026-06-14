@@ -1,7 +1,7 @@
 """Hot-reload the VERA UI inside the editor (works around UE's module cache).
 
-Run from the editor's Python console (single line):
-    exec(open(r"E:/PCW/VERA/UE57/Content/Python/vera_reload.py").read())
+Run from the editor's Python console (single line), pointing at this file:
+    exec(open(r"<repo>/UE57/Content/Python/vera_reload.py").read())
 
 Adds the UE57 Content/Python folder to sys.path first, so it works even when
 the editor has a different project open.
@@ -12,7 +12,8 @@ import sys
 
 import unreal
 
-VERA_PY_DIR = r"E:/PCW/VERA/UE57/Content/Python"
+# This file lives in UE57/Content/Python — use its own location (portable).
+VERA_PY_DIR = os.path.dirname(os.path.abspath(__file__))
 
 try:
     # 0) make sure VERA's Python folder is importable

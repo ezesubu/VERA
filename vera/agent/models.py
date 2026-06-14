@@ -1,9 +1,9 @@
-"""Registro de proveedores LLM y descubrimiento de modelos.
+"""LLM provider registry and model discovery.
 
-ANTHROPIC es nativo (`anthropic.Anthropic`); OPENAI/GEMINI/LOCAL pasan por el
-adaptador OpenAI-compatible (`vera.llm.openai_compat_client`). `list_models`
-devuelve la lista estática del registro salvo para LOCAL (LM Studio), donde
-descubre en vivo los modelos cargados vía `GET {base_url}/models`.
+ANTHROPIC is native (`anthropic.Anthropic`); OPENAI/GEMINI/LOCAL go through the
+OpenAI-compatible adapter (`vera.llm.openai_compat_client`). `list_models`
+returns the registry's static list except for LOCAL (LM Studio), where it
+discovers the loaded models live via `GET {base_url}/models`.
 """
 from __future__ import annotations
 
@@ -12,9 +12,19 @@ import os
 import urllib.request
 from typing import Callable, List, Optional
 
-# Endpoint OpenAI-compatible de Google para Gemini.
+# Google's OpenAI-compatible endpoint for Gemini.
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
-_LOCAL_BASE = "http://172.21.80.1:1233/v1"
+
+
+def _local_base_url() -> Optional[str]:
+    """The local OpenAI-compatible server URL, from VERA_LOCAL_BASE_URL.
+
+    No hardcoded default: any server that speaks the OpenAI `/v1` API works
+    (LM Studio → http://localhost:1234/v1, Ollama → http://localhost:11434/v1,
+    llama.cpp, vLLM, ...). Returns None when unset; LOCAL is then "not configured".
+    """
+    url = os.environ.get("VERA_LOCAL_BASE_URL")
+    return url.rstrip("/") if url else None
 
 PROVIDERS = {
     "ANTHROPIC": {
@@ -47,7 +57,7 @@ PROVIDERS = {
     "LOCAL": {
         "label": "LM Studio · Local",
         "env": None,
-        "base_url": _LOCAL_BASE,
+        "base_url": None,  # resolved live from VERA_LOCAL_BASE_URL
         "native": False,
         "needs_key": False,
         "discover": True,
@@ -56,14 +66,23 @@ PROVIDERS = {
 }
 
 
+def base_url_for(provider: str) -> Optional[str]:
+    """Effective base_url for `provider`. LOCAL reads VERA_LOCAL_BASE_URL live;
+    the rest use the static registry value. None means "not configured"."""
+    if provider == "LOCAL":
+        return _local_base_url()
+    spec = PROVIDERS.get(provider) or {}
+    return spec.get("base_url")
+
+
 def _default_http(url: str, timeout: float = 4.0) -> dict:
-    """GET JSON. Inyectable/mockeable vía el parámetro `http` de list_models."""
-    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (url local controlada)
+    """GET JSON. Injectable/mockable via the `http` parameter of list_models."""
+    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (controlled local url)
         return json.loads(resp.read().decode("utf-8"))
 
 
 def has_key(provider: str) -> bool:
-    """True si el proveedor no necesita key o la key está en el entorno."""
+    """True if the provider needs no key or the key is in the environment."""
     spec = PROVIDERS.get(provider)
     if not spec:
         return False
@@ -74,21 +93,24 @@ def has_key(provider: str) -> bool:
 
 
 def list_models(provider: str, *, http: Optional[Callable] = None) -> dict:
-    """Devuelve {provider, models, status}.
+    """Return {provider, models, status}.
 
-    status ∈ {"ok","missing_key","online","offline"}. Para LOCAL descubre en vivo
-    (online/offline); para el resto devuelve la lista estática (ok/missing_key).
+    status ∈ {"ok","missing_key","online","offline"}. For LOCAL it discovers live
+    (online/offline); for the rest it returns the static list (ok/missing_key).
     """
     spec = PROVIDERS.get(provider)
     if not spec:
         return {"provider": provider, "models": [], "status": "missing_key"}
 
     if spec.get("discover"):
+        base = base_url_for(provider)
+        if not base:  # no VERA_LOCAL_BASE_URL set → user must configure it
+            return {"provider": provider, "models": [], "status": "not_configured"}
         http = http or _default_http
-        url = spec["base_url"].rstrip("/") + "/models"
+        url = base.rstrip("/") + "/models"
         try:
             data = http(url)
-        except Exception:  # server local caído/inalcanzable
+        except Exception:  # local server down/unreachable
             return {"provider": provider, "models": [], "status": "offline"}
         ids = [m.get("id") for m in (data or {}).get("data", []) if m.get("id")]
         return {"provider": provider, "models": ids, "status": "online"}
@@ -99,12 +121,14 @@ def list_models(provider: str, *, http: Optional[Callable] = None) -> dict:
 
 
 def provider_status(provider: str) -> str:
-    """Estado de credenciales sin tocar la red: ok | missing_key."""
+    """Config status without touching the network: ok | missing_key | not_configured."""
+    if provider == "LOCAL":
+        return "ok" if _local_base_url() else "not_configured"
     return "ok" if has_key(provider) else "missing_key"
 
 
 def list_providers() -> List[dict]:
-    """Lista para el selector de la UI: id, label, status, needs_key."""
+    """List for the UI selector: id, label, status, needs_key."""
     return [
         {
             "id": pid,

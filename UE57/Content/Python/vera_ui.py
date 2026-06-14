@@ -1,5 +1,5 @@
-"""VERA Chat UI — shell Qt con interior HTML (QWebEngineView).
-Fallback automático a la UI de burbujas si QtWebEngineWidgets no está disponible."""
+"""VERA Chat UI — Qt shell with an HTML interior (QWebEngineView).
+Falls back automatically to the bubble UI if QtWebEngineWidgets is unavailable."""
 import json
 import os
 import queue
@@ -7,7 +7,14 @@ import threading
 
 import unreal
 
-# ---------- disponibilidad de Qt / WebEngine ----------
+# Force software rendering for the embedded QtWebEngine — the editor's GPU context
+# conflicts with Chromium's and crashes (0x80000003 in Qt6WebEngineCore). Must be
+# set before any WebEngine view is created. init_unreal sets this too; harmless to
+# repeat. The chat UI is light, so software rendering costs nothing noticeable.
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
+                      "--disable-gpu --disable-gpu-compositing")
+
+# ---------- Qt / WebEngine availability ----------
 HAS_PYSIDE = False
 HAS_WEBENGINE = False
 try:
@@ -63,16 +70,16 @@ TABS_PATH = os.path.join(
 BACKEND = ("127.0.0.1", 9880)
 STREAM_FINAL_TIMEOUT = 300.0
 
-_pending_events = []          # eventos del hilo lector → tick de Qt → JS (WebEngine)
-_pending_vera_responses = []  # respuestas del hilo fallback → tick de Qt → VeraChatWindow
-_answer_queue = queue.Queue()  # respuestas aprobar/denegar (JS → hilo lector del stream)
-CONFIRM_UI_TIMEOUT = 110.0     # menor que el timeout del server (120s)
+_pending_events = []          # events from the reader thread → Qt tick → JS (WebEngine)
+_pending_vera_responses = []  # responses from the fallback thread → Qt tick → VeraChatWindow
+_answer_queue = queue.Queue()  # approve/deny answers (JS → stream reader thread)
+CONFIRM_UI_TIMEOUT = 290.0     # a bit under the server's 300s gate timeout
 global_vera_window = None
 
 
 def module_level_tick_qt(delta_time):
-    """Tick global (registrado una vez): bombea Qt y drena eventos hacia JS (WebEngine)
-    y también drena _pending_vera_responses para el fallback de burbujas."""
+    """Global tick (registered once): pumps Qt and drains events toward JS (WebEngine),
+    and also drains _pending_vera_responses for the bubble fallback."""
     try:
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
@@ -81,12 +88,12 @@ def module_level_tick_qt(delta_time):
         app.processEvents()
         global _pending_events, _pending_vera_responses, global_vera_window
         if global_vera_window:
-            # Drenaje WebEngine: eventos del hilo lector de stream → handle_event → runJavaScript
+            # WebEngine drain: events from the stream reader thread → handle_event → runJavaScript
             if HAS_WEBENGINE and isinstance(global_vera_window, VeraWebWindow):
                 while _pending_events:
                     event = _pending_events.pop(0)
                     global_vera_window.handle_event(event)
-            # Drenaje fallback: respuestas del hilo _send_to_backend → add_vera_message
+            # Fallback drain: responses from the _send_to_backend thread → add_vera_message
             else:
                 while _pending_vera_responses:
                     color, msg = _pending_vera_responses.pop(0)
@@ -95,7 +102,7 @@ def module_level_tick_qt(delta_time):
         unreal.log_error(f"[VERA UI] tick error: {e}")
 
 
-# ---------- puente JS→Python ----------
+# ---------- JS→Python bridge ----------
 class PyBridge(QObject):
     def __init__(self, window):
         super().__init__()
@@ -105,19 +112,25 @@ class PyBridge(QObject):
     def js_ready(self):
         self._window.on_js_ready()
 
-    @Slot(str, str, str, str, str)
-    def send_command(self, text, provider="", model="", mode="", session_id=""):
+    @Slot(str, str, str, str, str, str)
+    def send_command(self, text, provider="", model="", mode="", session_id="", image_json=""):
         """User command. provider/model/mode/session_id come from the active tab.
-        'mode' is already the EFFECTIVE mode for this turn."""
+        image_json: JSON {data, media_type} or "" — an optional image attachment."""
+        image = None
+        if image_json:
+            try:
+                image = json.loads(image_json)
+            except ValueError:
+                image = None
         self._window.send_command(text, provider or None, model or None,
-                                  mode or None, session_id or None)
+                                  mode or None, session_id or None, image)
 
     @Slot(bool)
     def answer_question(self, approve):
-        """El usuario tocó Aprobar/Rechazar en el chat (round-trip del gate)."""
+        """The user tapped Approve/Reject in the chat (gate round-trip)."""
         _answer_queue.put(bool(approve))
 
-    # ---- selección persistente (provider/model/mode) ----
+    # ---- persistent selection (provider/model/mode) ----
     @Slot(str, str)
     def set_model(self, provider, model):
         self._window.provider = provider or None
@@ -127,7 +140,7 @@ class PyBridge(QObject):
     def set_mode(self, mode):
         self._window.mode = mode or None
 
-    # ---- control ops (round-trip al backend en un hilo) ----
+    # ---- control ops (round-trip to the backend on a thread) ----
     @Slot(str)
     def list_models(self, provider):
         self._window.control_op({"op": "list_models", "provider": provider})
@@ -163,6 +176,16 @@ class PyBridge(QObject):
     def save_tabs(self, data_json):
         self._window.save_tabs(data_json)
 
+    # ---- stop / cancel the running command ----
+    @Slot()
+    def stop(self):
+        self._window.control_op({"op": "cancel"})
+
+    # ---- command catalog (for the / slash menu) ----
+    @Slot()
+    def commands(self):
+        self._window.control_op({"op": "commands"})
+
     @Slot(str)
     def open_image(self, path):
         try:
@@ -180,14 +203,20 @@ class PyBridge(QObject):
             def _inside(child, parent):
                 return child == parent or child.startswith(parent + _os.sep)
             if not (_inside(real, shots_dir) or _inside(real, saved_vera)):
-                unreal.log_warning(f"[VERA UI] open_image rechazado (fuera de Saved): {real}")
+                unreal.log_warning(f"[VERA UI] open_image rejected (outside Saved): {real}")
                 return
             if _os.path.splitext(real)[1].lower() not in (".png", ".jpg", ".jpeg", ".bmp"):
-                unreal.log_warning(f"[VERA UI] open_image rechazado (no es imagen): {real}")
+                unreal.log_warning(f"[VERA UI] open_image rejected (not an image): {real}")
                 return
-            _os.startfile(real)
+            import sys as _sys, subprocess as _subprocess
+            if _sys.platform == "win32":
+                _os.startfile(real)  # Windows-only API
+            elif _sys.platform == "darwin":
+                _subprocess.run(["open", real], check=False)
+            else:
+                _subprocess.run(["xdg-open", real], check=False)
         except OSError as e:
-            unreal.log_error(f"[VERA UI] no pude abrir la imagen: {e}")
+            unreal.log_error(f"[VERA UI] could not open the image: {e}")
 
 
 # ---------- web page: external links open in the system browser ----------
@@ -209,7 +238,7 @@ class VeraWebPage(QWebEnginePage if HAS_WEBENGINE else object):
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
-# ---------- ventana WebEngine ----------
+# ---------- WebEngine window ----------
 class VeraWebWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -217,7 +246,7 @@ class VeraWebWindow(QWidget):
         self.resize(460, 720)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
 
-        # selección persistente del cerebro (la pisa el JS vía set_model/set_mode)
+        # persistent brain selection (overridden by JS via set_model/set_mode)
         self.provider = None
         self.model = None
         self.mode = None
@@ -236,15 +265,15 @@ class VeraWebWindow(QWidget):
         layout.addWidget(self.view)
         self.setLayout(layout)
 
-    # --- eventos hacia JS (siempre desde el main thread vía tick) ---
+    # --- events toward JS (always from the main thread via tick) ---
     def handle_event(self, event):
-        # question/question_resolved/thinking NO se persisten a propósito:
-        # al recargar la sesión, un botón de aprobar muerto sería peor que nada.
+        # question/question_resolved/thinking are deliberately NOT persisted:
+        # on session reload, a dead approve button would be worse than nothing.
         if event.get("type") in ("user", "progress", "image", "final", "error"):
             try:
                 vera_history.append_event(HISTORY_PATH, event)
             except OSError as e:
-                unreal.log_warning(f"[VERA UI] historial no disponible: {e}")
+                unreal.log_warning(f"[VERA UI] history unavailable: {e}")
         js = "veraChat.dispatch(" + json.dumps(event, ensure_ascii=True) + ")"
         self.view.page().runJavaScript(js)
 
@@ -258,15 +287,16 @@ class VeraWebWindow(QWidget):
         threading.Thread(target=self._check_status, daemon=True).start()
 
     # --- backend ---
-    def send_command(self, text, provider=None, model=None, mode=None, session_id=None):
+    def send_command(self, text, provider=None, model=None, mode=None, session_id=None, image=None):
         # The JS already painted the user bubble; here we just send.
         # provider/model fall back to the persisted selection if the turn omits them.
         # mode is already EFFECTIVE; session_id routes to the right tab's context.
+        # image: optional {data, media_type} attachment for vision-capable models.
         prov = provider or self.provider
         mdl = model or self.model
         md = mode or self.mode
         threading.Thread(target=self._stream_command,
-                         args=(text, prov, mdl, md, session_id), daemon=True).start()
+                         args=(text, prov, mdl, md, session_id, image), daemon=True).start()
 
     # --- tabs persistence (JS-driven; full state in one tabs.json) ---
     def save_tabs(self, data_json):
@@ -287,7 +317,7 @@ class VeraWebWindow(QWidget):
 
     # --- control ops (list_models / test_connection / providers / save_credentials) ---
     def control_op(self, op_payload):
-        """Round-trip de una línea JSON al backend: empuja el evento de respuesta a JS."""
+        """One-line JSON round-trip to the backend: pushes the response event to JS."""
         threading.Thread(target=self._control_op, args=(op_payload,), daemon=True).start()
 
     def _control_op(self, op_payload):
@@ -311,7 +341,7 @@ class VeraWebWindow(QWidget):
                     except ValueError:
                         pass
         except OSError:
-            # Sin backend: degradamos en silencio (la UI ya tiene fallback visual).
+            # No backend: degrade silently (the UI already has a visual fallback).
             op = op_payload.get("op")
             prov = op_payload.get("provider")
             if op == "list_models":
@@ -323,39 +353,13 @@ class VeraWebWindow(QWidget):
             elif op == "save_credentials":
                 _pending_events.append({"type": "saved", "provider": prov, "ok": False})
 
-    def _stream_command(self, text, provider=None, model=None, mode=None, session_id=None):
+    def _stream_command(self, text, provider=None, model=None, mode=None, session_id=None, image=None):
         import socket
         global _pending_events
 
-        # Fast keyword route: if it's about project analysis, use ProjectAnalyzer directly
-        lower_text = text.lower()
-        analyzer_kw = ["missing", "analyze", "analysis", "scan", "niagara", "acf", "gas",
-                       "what assets", "que falta", "assets are", "plugins", "installed",
-                       "detect", "check for", "falta", "tiene", "project has"]
-
-        if any(kw in lower_text for kw in analyzer_kw):
-            try:
-                _pending_events.append({"type": "progress", "agent": "Analyzer", "msg": "scanning project"})
-                import sys
-                sys.path.insert(0, "E:/PCW/VERA")
-                from vera.core.blackboard import Blackboard
-                from vera.core.project_analyzer_agent import ProjectAnalyzerAgent
-
-                bb = Blackboard()
-                analyzer = ProjectAnalyzerAgent(bb)
-                result = analyzer.analyze()
-
-                if result and result.get("summary"):
-                    _pending_events.append({"type": "final", "status": "success", "msg": result["summary"]})
-                else:
-                    _pending_events.append({"type": "final", "status": "error", "msg": "No se pudo analizar el proyecto."})
-                return
-            except Exception as e:
-                _pending_events.append({"type": "error", "msg": f"Analyzer error: {str(e)}"})
-                _pending_events.append({"type": "final", "status": "error", "msg": "Analysis failed"})
-                return
-
-        # Default: send to vera_server
+        # Every command goes to the brain (vera_server) — no keyword interception.
+        # Project analysis is now an agent TOOL (analyze_project, project-intelligence
+        # plugin) that the brain decides to call, instead of a regex hijack here.
         payload = {"command": text}
         if provider:
             payload["provider"] = provider
@@ -367,6 +371,8 @@ class VeraWebWindow(QWidget):
             payload["compact"] = True
         if session_id:
             payload["session_id"] = session_id
+        if image and isinstance(image, dict) and image.get("data"):
+            payload["image"] = image
         try:
             with socket.create_connection(BACKEND, timeout=STREAM_FINAL_TIMEOUT) as s:
                 s.settimeout(STREAM_FINAL_TIMEOUT)
@@ -387,10 +393,10 @@ class VeraWebWindow(QWidget):
                         except ValueError:
                             continue
                         if event.get("type") == "question":
-                            # Round-trip del gate destructivo: mostrar la pregunta
-                            # y esperar la decisión del usuario (botones en el chat).
+                            # Destructive-gate round-trip: show the question and
+                            # wait for the user's decision (buttons in the chat).
                             while not _answer_queue.empty():
-                                _answer_queue.get_nowait()  # descartar respuestas viejas
+                                _answer_queue.get_nowait()  # discard stale answers
                             _pending_events.append(event)
                             try:
                                 approve = _answer_queue.get(timeout=CONFIRM_UI_TIMEOUT)
@@ -399,7 +405,7 @@ class VeraWebWindow(QWidget):
                                 _pending_events.append({"type": "question_resolved", "approved": False})
                                 _pending_events.append({
                                     "type": "progress", "agent": "Gate",
-                                    "msg": "sin respuesta del usuario — acción denegada"})
+                                    "msg": "no response from the user — action denied"})
                             s.sendall((json.dumps({"approve": approve}) + "\n").encode("utf-8"))
                             continue
                         _pending_events.append(event)
@@ -407,8 +413,8 @@ class VeraWebWindow(QWidget):
                             return
         except ConnectionRefusedError:
             _pending_events.append({"type": "error",
-                "msg": "El backend VERA no está corriendo. "
-                       "Arrancalo con: `python -m vera.core.vera_server`"})
+                "msg": "The VERA backend isn't running. "
+                       "Start it with: `python -m vera.core.vera_server`"})
             _pending_events.append({"type": "status", "online": False})
         except OSError:
             _pending_events.append({"type": "interrupted"})
@@ -427,9 +433,9 @@ class VeraWebWindow(QWidget):
 
 
 # ==============================================================================
-# FALLBACK UI (burbujas QFrame) — COPIA TEXTUAL de las clases actuales de
-# vera_ui.py: Bubble, ChatInputEdit, VeraChatWindow.
-# _pending_vera_responses se mantiene como lista global separada de _pending_events.
+# FALLBACK UI (QFrame bubbles) — VERBATIM COPY of vera_ui.py's current classes:
+# Bubble, ChatInputEdit, VeraChatWindow.
+# _pending_vera_responses is kept as a global list separate from _pending_events.
 # ==============================================================================
 
 # Handle PySide imports gracefully for fallback (import extra widgets if available)
@@ -759,15 +765,15 @@ class VeraChatWindow(QWidget if HAS_PYSIDE else object):
             payload = json.dumps({"command": command}) + "\n"
             s.sendall(payload.encode("utf-8"))
 
-            # Leemos línea a línea para manejar el protocolo multi-evento del
-            # agent loop (VERA_USE_AGENT_LOOP).  Cada línea es un JSON independiente.
+            # Read line by line to handle the agent loop's multi-event protocol
+            # (VERA_USE_AGENT_LOOP). Each line is an independent JSON object.
             buf = b""
             while True:
                 chunk = s.recv(4096)
                 if not chunk:
                     break
                 buf += chunk
-                # Procesamos todas las líneas completas acumuladas en el buffer.
+                # Process every complete line accumulated in the buffer.
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
                     line = line.strip()
@@ -782,29 +788,29 @@ class VeraChatWindow(QWidget if HAS_PYSIDE else object):
                     etype = event.get("type")
 
                     if etype == "question":
-                        # Gate destructivo: la UI básica no tiene botón de aprobar.
-                        # Denegamos explícitamente para que el agent loop no quede
-                        # bloqueado esperando una respuesta que nunca va a llegar.
+                        # Destructive gate: the basic UI has no approve button.
+                        # We deny explicitly so the agent loop doesn't stay
+                        # blocked waiting for an answer that will never arrive.
                         try:
                             s.sendall((json.dumps({"approve": False}) + "\n").encode("utf-8"))
                         except OSError:
                             pass
                         _pending_vera_responses.append((
                             "red",
-                            "La UI básica no soporta confirmaciones — acción destructiva denegada. "
-                            "Usá la UI WebEngine para aprobar acciones."
+                            "The basic UI doesn't support confirmations — destructive action denied. "
+                            "Use the WebEngine UI to approve actions."
                         ))
-                        # Seguimos leyendo: el server enviará más eventos tras la denegación.
+                        # Keep reading: the server will send more events after the denial.
                         continue
 
                     if etype in ("final", "error"):
                         msg = event.get("message", "Done.")
                         color = "green" if etype == "final" else "red"
                         _pending_vera_responses.append((color, msg))
-                        return  # Respuesta definitiva recibida, cerramos.
+                        return  # Final response received, close.
 
-                    # Eventos intermedios (progress, thinking, etc.): los ignoramos
-                    # en la UI degradada; sólo nos interesa el mensaje final.
+                    # Intermediate events (progress, thinking, etc.): we ignore them
+                    # in the degraded UI; we only care about the final message.
 
         except ConnectionRefusedError:
             _pending_vera_responses.append(("red", "Cannot connect. Is vera_server.py running?"))
@@ -813,7 +819,7 @@ class VeraChatWindow(QWidget if HAS_PYSIDE else object):
 
 
 # ==============================================================================
-# FIN FALLBACK UI
+# END FALLBACK UI
 # ==============================================================================
 
 
@@ -821,21 +827,29 @@ def install_pyside_and_open():
     global HAS_PYSIDE
     global QApplication, QWidget, QVBoxLayout
 
-    unreal.log_warning("[VERA] Detectado: PySide6 no está instalado. Instalando automáticamente en el motor...")
+    unreal.log_warning("[VERA] Detected: PySide6 is not installed. Installing it into the engine automatically...")
 
     try:
         import sys
         import subprocess
-        # Find the actual python.exe avoiding UnrealEditor.exe
-        python_exe = os.path.join(sys.exec_prefix, "python.exe")
+        # Find the embedded interpreter (avoid UnrealEditor.exe), per platform.
+        if sys.platform == "win32":
+            python_exe = os.path.join(sys.exec_prefix, "python.exe")
+            engine_sub = os.path.join("Binaries", "ThirdParty", "Python3", "Win64", "python.exe")
+        elif sys.platform == "darwin":
+            python_exe = os.path.join(sys.exec_prefix, "bin", "python3")
+            engine_sub = os.path.join("Binaries", "ThirdParty", "Python3", "Mac", "bin", "python3")
+        else:
+            python_exe = os.path.join(sys.exec_prefix, "bin", "python3")
+            engine_sub = os.path.join("Binaries", "ThirdParty", "Python3", "Linux", "bin", "python3")
 
         if not os.path.exists(python_exe):
-            # Fallback for some UE versions
-            python_exe = os.path.join(unreal.Paths.engine_dir(), "Binaries", "ThirdParty", "Python3", "Win64", "python.exe")
+            # Fallback for some UE versions: the engine's bundled interpreter
+            python_exe = os.path.join(unreal.Paths.engine_dir(), engine_sub)
 
         # Auto-install PySide6
         subprocess.check_call([python_exe, "-m", "pip", "install", "PySide6"])
-        unreal.log("[VERA] PySide6 instalado correctamente. Cargando módulos...")
+        unreal.log("[VERA] PySide6 installed successfully. Loading modules...")
 
         from PySide6.QtWidgets import (QApplication as QApp, QWidget as QWid,
                                        QVBoxLayout as QVBox)
@@ -847,13 +861,13 @@ def install_pyside_and_open():
 
         HAS_PYSIDE = True
 
-        # Reintentar los imports de ESTE módulo para activar WebEngine si ya estaba disponible
+        # Retry THIS module's imports to enable WebEngine if it was already available
         import importlib
         import sys as _sys
         importlib.reload(_sys.modules[__name__])
 
     except Exception as e:
-        unreal.log_error(f"[VERA] Falló la instalación automática de PySide6: {e}")
+        unreal.log_error(f"[VERA] Automatic PySide6 installation failed: {e}")
         return False
 
     return True
@@ -873,8 +887,8 @@ def open_vera_ui():
         if HAS_WEBENGINE:
             global_vera_window = VeraWebWindow()
         else:
-            unreal.log_warning("[VERA] QtWebEngine no disponible — usando UI básica.")
-            global_vera_window = VeraChatWindow()  # fallback de burbujas
+            unreal.log_warning("[VERA] QtWebEngine unavailable — using the basic UI.")
+            global_vera_window = VeraChatWindow()  # bubble fallback
         try:
             unreal.parent_external_window_to_slate(global_vera_window.winId())
         except Exception:
@@ -905,7 +919,7 @@ def create_vera_menu():
         entry.set_label("🤖 VERA")
         entry.set_tool_tip("Open VERA chat interface")
 
-        # Restauramos el cerebro (antenita) porque Unreal fuerza la llave inglesa si está vacío
+        # Restore the brain (antenna) icon because Unreal forces the wrench if it's empty
         entry.set_icon("EditorStyle", "ClassIcon.AIController")
 
         entry.set_string_command(
