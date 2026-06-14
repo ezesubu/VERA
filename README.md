@@ -313,8 +313,12 @@ MIT — use VERA in your commercial and AAA projects. See [LICENSE](LICENSE).
 Conjured in the dark by **maVERAick** — Sith Lord of the Unreal Editor — mortal
 identity [**@ezesubu**](https://github.com/ezesubu). ⚡🌑
 
+**Core AI Team & Contributors:**
+- **Claude** — Lead UI Architect
+- **Antigravity (Gemini)** — Lead Artist & Infrastructure
+
 > _Come to the dark side. We have agents._
 
 <div align="center">
-<sub>built by <b>maVERAick</b> · <i>the agent thanks you ◇</i></sub>
+<sub>built by <b>maVERAick</b> · <i>the agents thank you ◇</i></sub>
 </div>
