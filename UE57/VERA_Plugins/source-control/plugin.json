@@ -1,0 +1,7 @@
+{
+  "name": "Source Control",
+  "version": "1.0.0",
+  "author": "VERA team",
+  "description": "Git source control for VERA: inspect status/diff/log and create gated commits with explicit paths, so VERA can save its own work safely.",
+  "enabled": true
+}

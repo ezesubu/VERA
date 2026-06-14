@@ -1,0 +1,7 @@
+{
+  "name": "Scene Vibe",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Instantly sets the cinematic MOOD of the open level for showcase screenshots and demo recordings. set_vibe picks one of 5 cinematic moods (cyberpunk, horror, golden_hour, noir, aztec_dusk) and spawns a tagged DirectionalLight + an unbound PostProcessVolume with curated color grading, exposure, bloom and vignette. clear_vibe removes them, restoring the level. Fully reversible.",
+  "enabled": true
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Project Intelligence",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Read-only project intelligence: analyze the on-disk UE project (engine, plugins, asset overview) and locate assets by name.",
+  "enabled": true
+}

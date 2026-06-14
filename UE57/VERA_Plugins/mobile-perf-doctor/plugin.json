@@ -1,0 +1,7 @@
+{
+  "name": "Mobile / Performance Doctor",
+  "version": "1.0.0",
+  "author": "VERA team",
+  "description": "Read-only mobile and performance auditor for Unreal projects: scans materials for mobile-incompatibility risks, ranks expensive materials, and profiles the open level. Run it BEFORE packaging for mobile.",
+  "enabled": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Project Playbook",
+  "version": "1.0.0",
+  "author": "Ezequiel / PCW",
+  "description": "The playbook for this project: conventions, decisions and known traps VERA loads every session, so it works like an engineer who already knows your codebase. Edit SKILL.md to teach VERA about your project.",
+  "enabled": true
+}

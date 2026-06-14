@@ -1,0 +1,7 @@
+{
+  "name": "Local IQ",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Raises a small local model's effective IQ: a disciplined plan -> act -> verify loop plus a recipe book of proven steps it reuses and grows over time.",
+  "enabled": true
+}
