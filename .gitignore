@@ -23,5 +23,38 @@ UE57/Binaries/
 UE57/DerivedDataCache/
 UE57/.vs/
 UE57/*.sln
-# Nota: UE57/Content NO se ignora (decisión pendiente sobre assets binarios);
-# Content/Python/ debe permanecer versionado siempre.
+# Content: only the VERA Python side ships. Ignore everything else under
+# Content (marketplace asset packs, generated assets, World Partition data).
+UE57/Content/*
+!UE57/Content/Python/
+
+# Loose game-demo experiment scripts (not the VERA product)
+UE57/Content/Python/vera_autopilot.py
+UE57/Content/Python/vera_enemy.py
+UE57/Content/Python/vera_horror.py
+UE57/Content/Python/vera_lava.py
+
+# UE project shell — not part of the VERA product
+UE57.uproject
+UE57/Config/
+UE57/Plugins/
+UE57/*.png
+
+# --- Not the product: build outputs, vendored deps, experiments ---
+Packaged/
+.ue_deps/
+Plugin/
+scratch/
+examples/
+.superpowers/
+.remember/
+.playwright-mcp/
+.idea/
+img.png
+
+# Loose root experiments
+test_vera_direct.py
+start_vera_autopilot.py
+
+# Legacy 'Crew' subsystem — kept locally for reference, excluded from the public repo
+legacy/
