@@ -36,6 +36,9 @@
     <div class="list" id="pop-list"></div>
   </div>
 
+  <!-- / slash command menu (opens above the dock) -->
+  <div class="pop slash" id="slash"></div>
+
   <div class="bar-ctl">
     <button class="model-pick" id="model-pick" title="Model">
       <span class="mp-dot off" id="mp-dot"></span>
@@ -59,7 +62,13 @@
 <div class="scrim" id="scrim"></div>
 <aside class="setup" id="setup">
   <div class="s-hd"><h2>Setup</h2><button class="x" id="setup-x">✕</button></div>
+  <div class="s-tabs">
+    <button class="s-tab on" data-pane="settings">Settings</button>
+    <button class="s-tab" data-pane="plugins">Plugins</button>
+    <button class="s-tab" data-pane="support">♥ Support</button>
+  </div>
   <div class="s-body">
+    <div class="s-pane" data-pane="settings">
     <div class="intro">Connect a brain. VERA runs your <b>local</b> LLM (LM Studio) for free and offline, or a cloud model when you want more power. Keys are saved to your <code>.env</code> and never sent back to the frontend.</div>
 
     <!-- LM Studio -->
@@ -69,7 +78,7 @@
         <div class="c-name"><div class="t">LM Studio · Local</div><div class="st no" id="st-LOCAL">○ not detected</div></div>
       </div>
       <div class="field">
-        <input value="http://172.21.80.1:1233" id="lm-url">
+        <input value="" placeholder="http://localhost:1234/v1" id="lm-url">
         <button id="lm-detect">Detect</button>
       </div>
       <div class="detected" id="lm-list"></div>
@@ -104,11 +113,41 @@
       <div class="field"><input type="password" placeholder="AIza…" id="k-GEMINI"><button data-p="GEMINI" class="test">Test</button></div>
     </div>
 
-    <!-- Plugins -->
-    <div class="s-sec">Plugins <span class="s-sec-hint">VERA_Plugins/ in your project</span></div>
-    <div class="plugins" id="plugins-list">
-      <div class="plug-empty">No plugins found. Drop a folder in <code>VERA_Plugins/</code> with <code>tools/</code> and/or a <code>SKILL.md</code>.</div>
-    </div>
+    </div><!-- /settings pane -->
+
+    <div class="s-pane" data-pane="plugins" hidden>
+      <div class="p-hint">Drop a folder in <code>VERA_Plugins/</code> with <code>tools/</code> and/or a <code>SKILL.md</code>. Toggle to enable.</div>
+      <div class="plugins" id="plugins-list">
+        <div class="plug-empty">No plugins found yet.</div>
+      </div>
+    </div><!-- /plugins pane -->
+
+    <div class="s-pane pact-pane" data-pane="support" hidden>
+      <div class="pact2">
+        <div class="pact2-glow"></div>
+        <div class="pact2-hero">
+          <div class="pact2-heart">♥</div>
+          <h3 class="pact2-title">The Co-Pilot Pact</h3>
+          <div class="pact2-sub">a small deal between you &amp; the maker</div>
+        </div>
+        <div class="pact2-letter">
+          <p>VERA is built by one person — <b>maVERAick</b> — on late nights and real coffee, with no studio behind it.</p>
+          <p>If the <span class="hl">Auto-Fixer</span> caught a bug before it cost you an afternoon — or VERA just saved your keyboard from the wall — that's our pact working.</p>
+          <p>Toss in what a coffee costs and you keep the updates coming, the tools sharp, and VERA <b>free &amp; local</b> for everyone.</p>
+        </div>
+        <ul class="pact2-keeps">
+          <li><span>⚡</span> New tools &amp; sharper fixes</li>
+          <li><span>🛡️</span> Stays free, local, yours</li>
+          <li><span>♥</span> A maker who reads every message</li>
+        </ul>
+        <div class="pact2-btns">
+          <a class="pact2-btn primary" href="https://ko-fi.com/maveraick"><span class="i">💎</span><span class="t">Support VERA</span><span class="s">monthly · or one-off</span></a>
+          <a class="pact2-btn beer" href="https://buymeacoffee.com/maveraick"><span class="i">🍺</span><span class="t">Buy a Beer</span><span class="s">a one-time thanks</span></a>
+          <a class="pact2-btn discord" href="https://discord.gg/ZxG8wbRp"><span class="i">💬</span><span class="t">Join the Discord</span><span class="s">free · come say hi</span></a>
+        </div>
+        <div class="pact2-sign">— maVERAick</div>
+      </div>
+    </div><!-- /support pane -->
   </div>
 </aside>
 
