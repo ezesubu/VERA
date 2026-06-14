@@ -36,6 +36,7 @@ and verifies its own work — powered by the brain *you* choose (cloud or fully 
 - [Usage](#usage)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
+- [FAQ](#faq)
 - [Support — The Co-Pilot Pact](#support--the-co-pilot-pact)
 - [License](#license)
 
@@ -289,6 +290,22 @@ python -m pytest tests/ -q
 The codebase is Python + a thin C++ editor module, fully cross-platform, and covered
 by a test suite. Open an issue or a PR, or come chat in
 [Discord](https://discord.gg/ZxG8wbRp).
+
+## FAQ
+
+**Do I need to know Unreal or Blueprints?**
+No. You describe what you want in plain language and VERA builds it through the
+engine's code layer — assets, actors, components, properties, whole systems.
+
+**Does VERA wire the visual Blueprint nodes for me?**
+Out of the box it creates the Blueprint, its components and properties, then
+compiles and saves it. Wiring the visual Event Graph (the "spaghetti") is one
+**plugin** away — a C++-backed plugin can reach the graph APIs that Python can't
+and generate the nodes too. That's the point of the plugin system: no ceiling.
+
+**Is it free? Does it phone home?**
+MIT, free, and it can run **100% local** with your own model — your keys and data
+never leave your machine.
 
 ## Support — The Co-Pilot Pact
 
