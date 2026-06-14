@@ -308,6 +308,13 @@ runs on your own keys and hardware. If it earns its keep, you can keep it alive:
 
 MIT — use VERA in your commercial and AAA projects. See [LICENSE](LICENSE).
 
+## Credits
+
+Conjured in the dark by **maVERAick** — Sith Lord of the Unreal Editor — mortal
+identity [**@ezesubu**](https://github.com/ezesubu). ⚡🌑
+
+> _Come to the dark side. We have agents._
+
 <div align="center">
 <sub>built by <b>maVERAick</b> · <i>the agent thanks you ◇</i></sub>
 </div>
