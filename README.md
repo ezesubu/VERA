@@ -218,11 +218,12 @@ Works with any MCP-capable client — **Claude Code**, **Cursor**, **VS Code**
 ### From source (developers)
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/ezesubu/VERA.git
+cd VERA
+python PackageVERA.py
 ```
 
-1. Open the `UE57` project, **or** drop the built plugin into your own project's
-   `Plugins/` folder.
+1. Copy the assembled `Plugin/` folder into your own Unreal Engine project's `Plugins/VERA/` directory.
 2. Enable Unreal's **Python Editor Script Plugin**.
 3. Open **VERA** from the editor toolbar. On first launch it **auto-installs** its
    Python dependencies (one time) — no console magic.
