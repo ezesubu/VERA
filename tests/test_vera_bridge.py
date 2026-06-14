@@ -1,4 +1,4 @@
-"""Testea el bridge real con un módulo `unreal` stubbeado y el tick manual."""
+"""Tests the real bridge with a stubbed `unreal` module and a manual tick."""
 import json
 import os
 import socket
@@ -12,7 +12,7 @@ import pytest
 
 @pytest.fixture
 def bridge_module(monkeypatch):
-    """Importa vera_bridge con `unreal` falso y sin auto-start."""
+    """Imports vera_bridge with a fake `unreal` and no auto-start."""
     fake_unreal = types.SimpleNamespace(
         log=lambda msg: None,
         log_error=lambda msg: None,
@@ -20,7 +20,7 @@ def bridge_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "unreal", fake_unreal)
     monkeypatch.setenv("VERA_BRIDGE_NO_AUTOSTART", "1")
-    # Importar desde la carpeta del proyecto UE
+    # Import from the UE project folder
     bridge_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "UE57", "Content", "Python",
@@ -46,8 +46,8 @@ def _send(port, payload):
 
 @pytest.fixture
 def running_bridge(bridge_module):
-    """Bridge escuchando en puerto efímero + bomba de tick simulando el main thread."""
-    port = bridge_module.start(port=0)  # 0 = puerto efímero, devuelve el real
+    """Bridge listening on an ephemeral port + tick pump simulating the main thread."""
+    port = bridge_module.start(port=0)  # 0 = ephemeral port, returns the real one
     stop = threading.Event()
 
     def tick_pump():
@@ -62,25 +62,25 @@ def running_bridge(bridge_module):
 
 
 def test_exec_roundtrip_newline_framed(running_bridge):
-    result = _send(running_bridge, {"script": "print('hola UE')"})
+    result = _send(running_bridge, {"script": "print('hello UE')"})
     assert result["success"] is True
-    assert "hola UE" in result["output"]
+    assert "hello UE" in result["output"]
 
 
 def test_exec_error_returns_traceback(running_bridge):
-    result = _send(running_bridge, {"script": "variable_inexistente"})
+    result = _send(running_bridge, {"script": "nonexistent_variable"})
     assert result["success"] is False
     assert "NameError" in result["error"]
 
 
 def test_tick_stall_returns_timeout_and_no_leaks(bridge_module, monkeypatch):
-    # Bridge SIN bomba de tick: nadie drena la cola → timeout server-side
+    # Bridge WITHOUT a tick pump: nobody drains the queue → server-side timeout
     monkeypatch.setattr(bridge_module, "MAIN_THREAD_TIMEOUT", 0.5)
     port = bridge_module.start(port=0)
-    result = _send(port, {"script": "print('nunca')"})
+    result = _send(port, {"script": "print('never')"})
     assert result["success"] is None
-    assert "no procesó" in result["error"]
-    # sin fugas: los dicts quedan limpios tras el timeout
+    assert "did not process" in result["error"]
+    # no leaks: the dicts are clean after the timeout
     time.sleep(0.1)
     assert bridge_module._results == {}
     assert bridge_module._result_events == {}
@@ -92,11 +92,11 @@ def test_two_concurrent_clients_get_own_results(running_bridge):
     def call(tag):
         results[tag] = _send(running_bridge, {"script": "print('%s')" % tag})
 
-    t1 = threading.Thread(target=call, args=("uno",))
-    t2 = threading.Thread(target=call, args=("dos",))
+    t1 = threading.Thread(target=call, args=("one",))
+    t2 = threading.Thread(target=call, args=("two",))
     t1.start()
     t2.start()
     t1.join(timeout=10)
     t2.join(timeout=10)
-    assert results["uno"]["output"] == "uno"
-    assert results["dos"]["output"] == "dos"
+    assert results["one"]["output"] == "one"
+    assert results["two"]["output"] == "two"

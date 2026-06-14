@@ -1,6 +1,7 @@
-"""Tests del payload extendido, control ops y modos de permiso en VeraServer."""
+"""Tests for the extended payload, control ops and permission modes in VeraServer."""
 import json
 import os
+import threading
 
 import pytest
 
@@ -8,7 +9,7 @@ import vera.core.vera_server as vs
 
 
 def _bare_server():
-    """VeraServer sin __init__ (sin bind/manager): solo métodos puros."""
+    """VeraServer without __init__ (no bind/manager): pure methods only."""
     return vs.VeraServer.__new__(vs.VeraServer)
 
 
@@ -58,6 +59,15 @@ def test_control_op_test_connection_local_online(monkeypatch):
     assert resp["ok"] is True
 
 
+def test_control_op_cancel_sets_flag():
+    srv = _bare_server()
+    srv._cancel = threading.Event()
+    assert not srv._cancel.is_set()
+    resp = srv._handle_control_op({"op": "cancel"})
+    assert resp == {"type": "cancelled", "ok": True}
+    assert srv._cancel.is_set()
+
+
 def test_control_op_save_credentials_writes_env(tmp_path, monkeypatch):
     srv = _bare_server()
     env_file = tmp_path / ".env"
@@ -67,7 +77,7 @@ def test_control_op_save_credentials_writes_env(tmp_path, monkeypatch):
 
     resp = srv._handle_control_op({"op": "save_credentials", "provider": "OPENAI", "key": "sk-xyz"})
     assert resp == {"type": "saved", "provider": "OPENAI", "ok": True}
-    assert "key" not in resp  # la key NUNCA se devuelve
+    assert "key" not in resp  # the key is NEVER returned
     content = env_file.read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=sk-xyz" in content
     assert "EXISTING=1" in content
@@ -94,7 +104,23 @@ def test_control_op_unknown_returns_error():
     assert resp["type"] == "error"
 
 
-# ---------------- reconfig por turno ----------------
+def test_control_op_commands_returns_catalog(tmp_path, monkeypatch):
+    srv = _bare_server()
+    _stub_plugins_dir(srv, tmp_path, monkeypatch)
+    resp = srv._handle_control_op({"op": "commands"})
+    assert resp["type"] == "commands"
+    cmds = resp["commands"]
+    assert cmds  # non-empty
+    by_name = {c["name"]: c for c in cmds}
+    # core tools are present with plugin == None
+    assert "run_ue_python" in by_name
+    assert by_name["run_ue_python"]["plugin"] is None
+    # the stubbed enabled plugin's tool is present
+    assert "demo_tool" in by_name
+    assert by_name["demo_tool"]["plugin"] == "Demo"
+
+
+# ---------------- per-turn reconfig ----------------
 
 class _FakeLoop:
     def __init__(self):
@@ -139,7 +165,7 @@ def test_reconfigures_loop_provider_and_model(monkeypatch):
 
 def test_mode_to_run_kwargs():
     srv = _bare_server()
-    # ask: confirm gate normal, destructivas visibles
+    # ask: normal confirm gate, destructive ops visible
     assert srv._include_destructive_for_mode("ask") is True
     assert srv._include_destructive_for_mode("auto") is True
     assert srv._include_destructive_for_mode("readonly") is False

@@ -10,7 +10,7 @@ from vera.tools.ue_conn import UEConnectionError, send_json_stream
 
 @pytest.fixture
 def streaming_backend():
-    """Backend falso que emite progreso + final con el protocolo streaming."""
+    """Fake backend that emits progress + final using the streaming protocol."""
     state = {
         "lines": [
             {"type": "progress", "agent": "Manager", "msg": "routing"},
@@ -76,7 +76,7 @@ def test_send_vera_command_returns_final_with_events(streaming_backend):
 
 @pytest.fixture
 def dying_backend():
-    """Backend que emite progreso y cierra SIN evento final (pipeline interrumpido)."""
+    """Backend that emits progress and closes WITHOUT a final event (interrupted pipeline)."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("127.0.0.1", 0))
@@ -101,7 +101,7 @@ def dying_backend():
                 conn.sendall(
                     (json.dumps({"type": "progress", "agent": "Manager", "msg": "routing"}) + "\n")
                     .encode("utf-8"))
-                # cierra sin final
+                # closes without a final
 
     threading.Thread(target=serve, daemon=True).start()
     yield port
@@ -112,5 +112,5 @@ def dying_backend():
 def test_send_vera_command_stream_died_without_final(dying_backend):
     result = send_vera_command("build", port=dying_backend)
     assert result["status"] == "error"
-    assert "sin un evento final" in result["msg"]
-    assert result["events"][-1]["type"] == "progress"  # los parciales se conservan
+    assert "without a final event" in result["msg"]
+    assert result["events"][-1]["type"] == "progress"  # partials are preserved

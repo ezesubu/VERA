@@ -1,13 +1,13 @@
-"""Historial del chat de VERA — JSONL append-only, mismo schema que el protocolo.
-Stdlib only (corre en el Python embebido de Unreal).
-Supuestos: UN solo proceso escritor (la ventana del editor); durabilidad best-effort (sin fsync — un crash puede perder los últimos eventos)."""
+"""VERA chat history — append-only JSONL, same schema as the protocol.
+Stdlib only (runs in Unreal's embedded Python).
+Assumptions: a SINGLE writer process (the editor window); best-effort durability (no fsync — a crash may lose the last few events)."""
 import json
 import os
 from collections import deque
 
 
 def append_event(path, event):
-    """Appendea un evento como línea JSON. Crea el directorio si falta."""
+    """Appends an event as a JSON line. Creates the directory if missing."""
     path = os.fspath(path)
     parent = os.path.dirname(path)
     if parent and not os.path.isdir(parent):
@@ -17,8 +17,8 @@ def append_event(path, event):
 
 
 def load_recent(path, n=200):
-    """Últimos n eventos. Líneas corruptas se saltan (el historial nunca
-    impide abrir la ventana)."""
+    """Last n events. Corrupt lines are skipped (history never prevents the
+    window from opening)."""
     path = os.fspath(path)
     if n <= 0:
         return []

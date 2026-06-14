@@ -4,7 +4,12 @@ import json
 import pytest
 
 import vera.agent.factory as factory
-from vera.agent.factory import build_agent_loop, COMPACT_SYSTEM_PROMPT, SYSTEM_PROMPT
+from vera.agent.factory import (
+    build_agent_loop,
+    _build_system_prompt,
+    COMPACT_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+)
 
 
 class _DummyLLM:
@@ -77,3 +82,62 @@ def test_compact_prompt_still_appends_plugin_skills(plugins_dir):
 def test_full_prompt_by_default(plugins_dir):
     loop = build_agent_loop(llm_client=_DummyLLM())
     assert loop.system.startswith(SYSTEM_PROMPT)
+
+
+# --- _build_system_prompt budget tests -------------------------------------
+
+class _FakePlugin:
+    def __init__(self, name, skill_text):
+        self.name = name
+        self.skill_text = skill_text
+
+
+def _big_plugins(n, chars=3000):
+    return [_FakePlugin(f"plug{i}", "Z" * chars) for i in range(n)]
+
+
+def test_non_compact_includes_everything():
+    plugins = _big_plugins(4, chars=2000)
+    out = _build_system_prompt("BASE", plugins, compact=False)
+    for p in plugins:
+        assert p.skill_text in out
+    assert "truncated" not in out
+    assert "omitted" not in out
+
+
+def test_compact_caps_total_skill_chars():
+    plugins = _big_plugins(6, chars=3000)
+    out = _build_system_prompt("BASE", plugins, compact=True)
+    # the injected skill section (everything past BASE) stays under budget
+    skill_section = out[len("BASE"):]
+    # budget ~4000 chars + small per-skill markers/headers slack
+    assert len(skill_section) < 5500
+    # at least one truncation/omission marker present
+    assert ("truncated" in out) or ("omitted" in out)
+
+
+def test_compact_truncates_each_skill_and_marks_omitted():
+    # each skill truncates to ~600 chars (~150 tokens); 12 of them blow past the
+    # ~1000-token budget so some must be omitted.
+    plugins = _big_plugins(12, chars=3000)
+    out = _build_system_prompt("BASE", plugins, compact=True)
+    # no single full 3000-char skill body survives intact
+    assert ("Z" * 3000) not in out
+    assert "truncated" in out
+    assert "omitted" in out
+
+
+def test_compact_header_dropped_when_no_skills():
+    out = _build_system_prompt("BASE", [], compact=True)
+    assert out == "BASE"
+    assert "Studio plugins" not in out
+
+
+def test_build_agent_loop_compact_has_smaller_system(plugins_dir):
+    for i in range(4):
+        _make_plugin(plugins_dir, f"p{i}", with_tool=False, skill="A" * 3000)
+    full = build_agent_loop(llm_client=_DummyLLM(), compact=False)
+    compact = build_agent_loop(llm_client=_DummyLLM(), compact=True)
+    assert compact.compact is True
+    assert full.compact is False
+    assert len(compact.system) < len(full.system)

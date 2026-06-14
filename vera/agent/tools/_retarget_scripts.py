@@ -1,11 +1,11 @@
 # vera/agent/tools/_retarget_scripts.py
-"""Builders de scripts curados para las tools de retargeting (fase 3).
+"""Builders of curated scripts for the retargeting tools (phase 3).
 
-Pipeline verificado EN VIVO contra UE 5.7 (ver Task 0 del plan): la pieza
-crítica no documentada es assign_ik_rig_to_all_ops — sin ella los ops del
-retargeter no conocen los rigs y el chain mapping queda vacío en silencio.
-Mismas reglas que _anim_scripts: tokens __X__ con json.dumps/repr, JSON
-compacto de una línea.
+Pipeline verified LIVE against UE 5.7 (see Task 0 of the plan): the critical
+undocumented piece is assign_ik_rig_to_all_ops — without it the retargeter's ops
+do not know the rigs and the chain mapping ends up empty in silence.
+Same rules as _anim_scripts: __X__ tokens with json.dumps/repr, compact one-line
+JSON.
 """
 from __future__ import annotations
 
@@ -15,34 +15,34 @@ from vera.agent.tools._anim_scripts import _COMMON
 
 _RTG_COMMON = _COMMON + '''
 def _skeleton_from_ref(ref):
-    """ref: label de actor o path (/Game/...) de Skeleton/SkeletalMesh/IKRig.
+    """ref: actor label or path (/Game/...) of Skeleton/SkeletalMesh/IKRig.
     -> (skeleton, mesh|None, error|None)"""
     if ref.startswith("/"):
         a = unreal.load_asset(ref)
         if a is None:
-            return None, None, "asset no encontrado: %s" % ref
+            return None, None, "asset not found: %s" % ref
         if isinstance(a, unreal.SkeletalMesh):
             return a.get_editor_property("skeleton"), a, None
         if isinstance(a, unreal.IKRigDefinition):
             m = unreal.IKRigController.get_controller(a).get_skeletal_mesh()
             if m is None:
-                return None, None, "el IK Rig %s no tiene mesh asignado" % ref
+                return None, None, "the IK Rig %s has no mesh assigned" % ref
             return m.get_editor_property("skeleton"), m, None
         if isinstance(a, unreal.Skeleton):
             return a, None, None
-        return None, None, "tipo no soportado: %s" % type(a).__name__
+        return None, None, "unsupported type: %s" % type(a).__name__
     actor, actors = _find_actor(ref)
     if actor is None:
-        return None, None, ("actor no encontrado: %s (parecidos: %s)"
+        return None, None, ("actor not found: %s (similar: %s)"
                             % (ref, ", ".join(_candidates(actors, ref))))
     info, comp = _diagnose(actor)
     if info["kind"] != "skeletal":
-        return None, None, "'%s' no es skeletal (%s)" % (info["actor"], info["kind"])
+        return None, None, "'%s' is not skeletal (%s)" % (info["actor"], info["kind"])
     mesh = comp.get_skeletal_mesh_asset()
     return mesh.get_editor_property("skeleton"), mesh, None
 
 def _find_rig_for(skel):
-    """IKRigDefinition existente cuyo mesh use este skeleton, o None (find-first)."""
+    """Existing IKRigDefinition whose mesh uses this skeleton, or None (find-first)."""
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
     flt = unreal.ARFilter(
         class_paths=[unreal.TopLevelAssetPath("/Script/IKRig", "IKRigDefinition")],
@@ -60,7 +60,7 @@ def _find_rig_for(skel):
     return None
 
 def _anims_for_skeleton(skel):
-    """{nombre: package_path} de las AnimSequences de /Game para este skeleton."""
+    """{name: package_path} of the /Game AnimSequences for this skeleton."""
     ar = unreal.AssetRegistryHelpers.get_asset_registry()
     flt = unreal.ARFilter(
         class_paths=[unreal.TopLevelAssetPath("/Script/Engine", "AnimSequence")],
@@ -85,7 +85,7 @@ if err is not None:
     print(json.dumps({"error": "bad_ref", "detail": err}, sort_keys=True))
 elif mesh is None:
     print(json.dumps({"error": "need_mesh",
-                      "detail": "pasa un actor o un SkeletalMesh; un Skeleton solo no alcanza para crear el rig"},
+                      "detail": "pass an actor or a SkeletalMesh; a Skeleton alone is not enough to create the rig"},
                      sort_keys=True))
 else:
     rig = _find_rig_for(skel)
@@ -104,17 +104,17 @@ else:
                 unreal.EditorAssetLibrary.delete_asset(rig.get_path_name())
                 error = {"error": "mesh_incompatible", "mesh": mesh.get_name()}
             elif not ctrl.apply_auto_generated_retarget_definition():
-                # un rig sin chains es basura: borrarlo y reportar honesto
+                # a rig with no chains is garbage: delete it and report honestly
                 unreal.EditorAssetLibrary.delete_asset(rig.get_path_name())
                 error = {"error": "not_characterizable",
                          "skeleton": skel.get_name(),
-                         "detail": ("el esqueleto no coincide con ningun template "
-                                    "conocido (no parece humanoide); el rig requiere "
-                                    "chains manuales en el editor")}
+                         "detail": ("the skeleton matches no known template "
+                                    "(does not look humanoid); the rig requires "
+                                    "manual chains in the editor")}
             else:
                 created = True
-                # sin save, un restart del editor pierde el asset (E2E vivo):
-                # el find-first entre sesiones depende de assets persistidos
+                # without save, an editor restart loses the asset (live E2E):
+                # cross-session find-first depends on persisted assets
                 unreal.EditorAssetLibrary.save_asset(rig.get_path_name().rsplit(".", 1)[0])
     if error is not None:
         print(json.dumps(error, sort_keys=True))
@@ -125,7 +125,7 @@ else:
                "skeleton": skel.get_name(), "chains": chains,
                "retarget_root": str(ctrl.get_retarget_root()), "created": created}
         if not chains:
-            out["warning"] = "rig existente sin retarget chains: inutil para retargetear"
+            out["warning"] = "existing rig with no retarget chains: useless for retargeting"
         print(json.dumps(out, sort_keys=True))
 '''
 
@@ -143,7 +143,7 @@ else:
     if src_rig is None or tgt_rig is None:
         faltan = [n for n, r in (("source", src_rig), ("target", tgt_rig)) if r is None]
         print(json.dumps({"error": "missing_ik_rig", "missing": faltan,
-                          "detail": "usa ensure_ik_rig primero (un gate por asset)"},
+                          "detail": "use ensure_ik_rig first (one gate per asset)"},
                          sort_keys=True))
     else:
         ar = unreal.AssetRegistryHelpers.get_asset_registry()
@@ -170,8 +170,8 @@ else:
             rc = unreal.IKRetargeterController.get_controller(rtg)
             rc.set_ik_rig(unreal.RetargetSourceOrTarget.SOURCE, src_rig)
             rc.set_ik_rig(unreal.RetargetSourceOrTarget.TARGET, tgt_rig)
-            # PIEZA CRITICA 5.7 (verificada en vivo): sin esto los ops no
-            # conocen los rigs y el mapping queda vacio EN SILENCIO
+            # CRITICAL 5.7 PIECE (verified live): without this the ops do not
+            # know the rigs and the mapping ends up empty IN SILENCE
             rc.assign_ik_rig_to_all_ops(unreal.RetargetSourceOrTarget.SOURCE, src_rig)
             rc.assign_ik_rig_to_all_ops(unreal.RetargetSourceOrTarget.TARGET, tgt_rig)
             rc.auto_map_chains(unreal.AutoMapChainType.FUZZY, True)
@@ -191,7 +191,7 @@ else:
                 unreal.EditorAssetLibrary.delete_asset(rtg.get_path_name())
             print(json.dumps({"error": "no_chains_mapped", "created_then_deleted": created,
                               "target_chains": unmapped,
-                              "detail": "auto_map_chains no encontro pares; revisar nombres de chains"},
+                              "detail": "auto_map_chains found no pairs; check the chain names"},
                              sort_keys=True))
         else:
             if created:
@@ -218,7 +218,7 @@ else:
     tgt_mesh = unreal.IKRigController.get_controller(tgt_rig).get_skeletal_mesh() if tgt_rig else None
     if src_mesh is None or tgt_mesh is None:
         print(json.dumps({"error": "retargeter_incomplete",
-                          "detail": "el retargeter no tiene rigs/meshes completos"}, sort_keys=True))
+                          "detail": "the retargeter does not have complete rigs/meshes"}, sort_keys=True))
     else:
         anim_map = _anims_for_skeleton(src_mesh.get_editor_property("skeleton"))
         skipped = []
@@ -241,12 +241,12 @@ else:
                 if n in anim_map:
                     chosen.append(n)
                 else:
-                    skipped.append(n + " (no existe para el skeleton source)")
+                    skipped.append(n + " (does not exist for the source skeleton)")
         dest_dir = _pkg_dir(tgt_mesh) + "/VERA_Retargeted"
         to_do = []
         for n in chosen:
             if unreal.EditorAssetLibrary.does_asset_exist(dest_dir + "/" + n + "_VERA_RTG"):
-                skipped.append(n + " (ya retargeteada)")
+                skipped.append(n + " (already retargeted)")
             else:
                 to_do.append(n)
         created = []
@@ -256,7 +256,7 @@ else:
             res = unreal.IKRetargetBatchOperation.duplicate_and_retarget(
                 ads, src_mesh, tgt_mesh, rtg, suffix="_VERA_RTG")
             for ad in res:
-                # el batch deja los duplicados en /Game raiz (verificado en vivo): moverlos
+                # the batch leaves the duplicates in /Game root (verified live): move them
                 old = str(ad.package_name)
                 new = dest_dir + "/" + str(ad.asset_name)
                 unreal.EditorAssetLibrary.rename_asset(old, new)
@@ -280,7 +280,7 @@ else:
                     played = available[0].rsplit("/", 1)[-1]
         if not created and not skipped:
             print(json.dumps({"error": "no_anims",
-                              "detail": "ninguna animacion para retargetear (revisa la lista o el skeleton source)"},
+                              "detail": "no animation to retarget (check the list or the source skeleton)"},
                              sort_keys=True))
         else:
             print(json.dumps({"created_anims": created, "skipped": skipped,

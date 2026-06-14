@@ -1,6 +1,6 @@
-"""Servidor MCP de VERA: expone el editor de Unreal como herramientas para Claude Code.
+"""VERA MCP server: exposes the Unreal editor as tools for Claude Code.
 
-Las funciones de este módulo son puras/testeables; el wiring FastMCP vive en main().
+The functions in this module are pure/testable; the FastMCP wiring lives in main().
 """
 import os
 import time
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from vera.tools.ue_conn import UEConnectionError, UETimeoutError, send_json
 
-# Raíz del repo = dos niveles arriba de vera/tools/
+# Repo root = two levels above vera/tools/
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 UE_PROJECT_DIR = Path(os.environ.get("VERA_UE_PROJECT_DIR", _REPO_ROOT / "UE57"))
 LOG_PATH = UE_PROJECT_DIR / "Saved" / "Logs" / "UE57.log"
@@ -19,22 +19,22 @@ BRIDGE_PORT = int(os.environ.get("VERA_BRIDGE_PORT", "9878"))
 BACKEND_PORT = int(os.environ.get("VERA_BACKEND_PORT", "9880"))
 
 BRIDGE_DOWN_MSG = (
-    "Unreal no está corriendo o el bridge no cargó. Abrí el proyecto UE57 "
-    "(el bridge auto-arranca con init_unreal.py) o ejecutá `import vera_bridge` "
-    "en la consola Python del editor. Probá `ue_status` para diagnosticar."
+    "Unreal is not running or the bridge did not load. Open the UE57 project "
+    "(the bridge auto-starts with init_unreal.py) or run `import vera_bridge` "
+    "in the editor's Python console. Try `ue_status` to diagnose."
 )
 BACKEND_DOWN_MSG = (
-    "El backend VERA (puerto 9880) no está corriendo. "
-    "Arrancalo con: python -m vera.core.vera_server"
+    "The VERA backend (port 9880) is not running. "
+    "Start it with: python -m vera.core.vera_server"
 )
 
 
 def tail_log(path, lines=100):
-    """Últimas N líneas del log del editor. Lee el archivo directo: funciona
-    aunque el editor esté colgado o crasheado."""
+    """Last N lines of the editor log. Reads the file directly: works even if the
+    editor is hung or crashed."""
     path = Path(path)
     if not path.exists():
-        return f"No existe el log en {path}. ¿El editor llegó a abrir alguna vez?"
+        return f"No log at {path}. Did the editor ever open?"
     text = path.read_text(encoding="utf-8", errors="replace")
     if lines <= 0:
         return ""
@@ -42,18 +42,18 @@ def tail_log(path, lines=100):
 
 
 def run_script(script, timeout=60.0, port=None):
-    """Ejecuta Python en el main thread del editor. El traceback de UE vuelve
-    como resultado normal (success=False), no como excepción — el agente lo lee
-    y corrige. success=None significa timeout: el script puede seguir corriendo."""
+    """Runs Python on the editor's main thread. The UE traceback comes back as a
+    normal result (success=False), not as an exception — the agent reads it and
+    fixes it. success=None means timeout: the script may still be running."""
     try:
         result = send_json(port or BRIDGE_PORT, {"script": script}, timeout=timeout)
     except UETimeoutError:
         return {
             "success": None,
             "output": (
-                f"El editor no respondió en {timeout:.0f}s — el script sigue "
-                "ejecutando (compilar shaders o cargar assets puede tardar). "
-                "Verificá con ue_log o ue_status; no se abortó nada."
+                f"The editor did not respond within {timeout:.0f}s — the script is "
+                "still running (compiling shaders or loading assets can take a while). "
+                "Check with ue_log or ue_status; nothing was aborted."
             ),
         }
     except UEConnectionError:
@@ -62,7 +62,7 @@ def run_script(script, timeout=60.0, port=None):
 
 
 def check_status(bridge_port=None, backend_port=None):
-    """Ping a bridge y backend. Para el bridge pide la versión del engine."""
+    """Pings bridge and backend. For the bridge it requests the engine version."""
     status = {"bridge": {"online": False, "engine_version": None}, "backend": {"online": False}}
 
     version_script = "import unreal\nprint(unreal.SystemLibrary.get_engine_version())"
@@ -87,8 +87,8 @@ def check_status(bridge_port=None, backend_port=None):
 
 
 def send_vera_command(text, timeout=300.0, port=None):
-    """Comando de alto nivel al pipeline de agentes (protocolo streaming).
-    Devuelve el evento final + la lista completa en "events"."""
+    """High-level command to the agent pipeline (streaming protocol).
+    Returns the final event + the full list in "events"."""
     from vera.tools.ue_conn import send_json_stream
     try:
         events = send_json_stream(port or BACKEND_PORT, {"command": text}, timeout=timeout)
@@ -97,17 +97,17 @@ def send_vera_command(text, timeout=300.0, port=None):
     except UETimeoutError:
         return {
             "status": "error",
-            "message": f"El backend no respondió en {timeout:.0f}s. Mirá sus logs.",
+            "message": f"The backend did not respond within {timeout:.0f}s. Check its logs.",
             "events": [],
         }
     final = events[-1]
     if final.get("type") != "final":
-        interrupted = "El backend cerró el stream sin un evento final (pipeline interrumpido)."
+        interrupted = "The backend closed the stream without a final event (pipeline interrupted)."
         return {"status": "error", "msg": interrupted, "message": interrupted, "events": events}
     return {
         "status": final.get("status", "error"),
         "msg": final.get("msg", ""),
-        "message": final.get("msg", ""),  # compat con el tool vera_command existente
+        "message": final.get("msg", ""),  # compat with the existing vera_command tool
         "events": events,
     }
 
@@ -115,16 +115,16 @@ def send_vera_command(text, timeout=300.0, port=None):
 _SCREENSHOT_SCRIPT = (
     "import unreal\n"
     'unreal.AutomationLibrary.take_high_res_screenshot(1280, 720, "{name}")\n'
-    "print('screenshot solicitado: {name}')"
+    "print('screenshot requested: {name}')"
 )
 
 
 def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
-    """Pide una captura del viewport y espera a que el PNG aparezca en disco.
+    """Requests a viewport capture and waits for the PNG to appear on disk.
 
-    Devuelve el Path del PNG, o None si falló (bridge caído o el archivo
-    nunca apareció). take_high_res_screenshot es asíncrona: UE escribe el
-    archivo unos frames después de ejecutar el script.
+    Returns the Path of the PNG, or None if it failed (bridge down or the file
+    never appeared). take_high_res_screenshot is asynchronous: UE writes the
+    file a few frames after running the script.
     """
     target_dir = Path(screenshots_dir) if screenshots_dir else SCREENSHOTS_DIR
     name = f"vera_{uuid.uuid4().hex[:8]}.png"
@@ -139,8 +139,8 @@ def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
     while time.time() < deadline:
         if target.exists():
             size = target.stat().st_size
-            # UE escribe directo al path final (sin temp+rename): exigir tamaño
-            # estable en dos polls consecutivos evita devolver un PNG a medias.
+            # UE writes directly to the final path (no temp+rename): requiring a
+            # stable size across two consecutive polls avoids returning a half-written PNG.
             if size > 0 and size == last_size:
                 return target
             last_size = size
@@ -149,49 +149,49 @@ def request_screenshot(timeout=20.0, port=None, screenshots_dir=None):
 
 
 def main():
-    # Import adentro de main(): los tests importan este módulo sin necesitar el SDK
+    # Import inside main(): tests import this module without needing the SDK
     from mcp.server.fastmcp import FastMCP, Image
 
     mcp = FastMCP("vera-ue")
 
     @mcp.tool()
     def ue_exec(script: str, timeout: float = 60.0) -> str:
-        """Ejecuta Python en el main thread del editor de Unreal (módulo `unreal`
-        disponible). Devuelve stdout capturado, o el traceback si el script falló.
-        Si excede `timeout` (segundos) devuelve TIMEOUT: el script SIGUE ejecutando
-        en el editor (no se aborta); verificá el resultado con ue_log o ue_status.
-        Cada llamada usa un namespace nuevo: el estado (variables, imports) NO persiste entre llamadas — incluí todo lo necesario en un solo script."""
+        """Runs Python on the Unreal editor's main thread (the `unreal` module is
+        available). Returns captured stdout, or the traceback if the script failed.
+        If it exceeds `timeout` (seconds) it returns TIMEOUT: the script KEEPS running
+        in the editor (it is not aborted); check the result with ue_log or ue_status.
+        Each call uses a fresh namespace: state (variables, imports) does NOT persist between calls — include everything needed in a single script."""
         result = run_script(script, timeout=timeout)
         if result.get("success") is False:
-            return f"ERROR:\n{result.get('error', result.get('output', 'sin detalle'))}"
+            return f"ERROR:\n{result.get('error', result.get('output', 'no detail'))}"
         if result.get("success") is None:
             return f"TIMEOUT:\n{result.get('output', '')}"
-        return result.get("output", "") or "(sin output)"
+        return result.get("output", "") or "(no output)"
 
     @mcp.tool()
     def ue_screenshot() -> Image:
-        """Captura el viewport activo del editor y devuelve el PNG."""
+        """Captures the editor's active viewport and returns the PNG."""
         path = request_screenshot()
         if path is None:
             raise RuntimeError(
-                "No se pudo capturar el viewport (bridge caído o la captura no apareció en disco a tiempo). " + BRIDGE_DOWN_MSG
-                + " Si el bridge está OK, mirá ue_log(100)."
+                "Could not capture the viewport (bridge down or the capture did not appear on disk in time). " + BRIDGE_DOWN_MSG
+                + " If the bridge is OK, check ue_log(100)."
             )
         return Image(data=path.read_bytes(), format="png")
 
     @mcp.tool()
     def ue_log(lines: int = 100) -> str:
-        """Últimas N líneas (default 100) del Output Log del editor — lee Saved/Logs/UE57.log directo del disco: funciona aunque el editor esté colgado o crasheado."""
+        """Last N lines (default 100) of the editor's Output Log — reads Saved/Logs/UE57.log directly from disk: works even if the editor is hung or crashed."""
         return tail_log(LOG_PATH, lines=lines)
 
     @mcp.tool()
     def ue_status() -> dict:
-        """Estado del bridge (9878) y del backend VERA (9880), con versión del engine."""
+        """Status of the bridge (9878) and the VERA backend (9880), with the engine version."""
         return check_status()
 
     @mcp.tool()
     def vera_command(text: str) -> str:
-        """Comando de alto nivel al pipeline de agentes VERA (ManagerAgent → recetas). Puede tardar varios minutos: el backend llama a un LLM (timeout interno 300s)."""
+        """High-level command to the VERA agent pipeline (ManagerAgent → recipes). It can take several minutes: the backend calls an LLM (internal timeout 300s)."""
         result = send_vera_command(text)
         return result.get("message", str(result))
 

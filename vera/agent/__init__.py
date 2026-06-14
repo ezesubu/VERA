@@ -1,1 +1,1 @@
-"""VERA: cerebro agéntico (bucle de tool-use)."""
+"""VERA: agentic brain (tool-use loop)."""

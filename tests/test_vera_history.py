@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-# Importar desde la carpeta del proyecto UE (mismo patrón que test_vera_bridge)
+# Import from the UE project folder (same pattern as test_vera_bridge)
 BRIDGE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "UE57", "Content", "Python")
@@ -15,11 +15,11 @@ import vera_history  # noqa: E402
 
 def test_append_and_load_roundtrip(tmp_path):
     path = tmp_path / "chat_history.jsonl"
-    vera_history.append_event(path, {"type": "user", "msg": "hola"})
+    vera_history.append_event(path, {"type": "user", "msg": "hi"})
     vera_history.append_event(path, {"type": "final", "status": "success", "msg": "done"})
     events = vera_history.load_recent(path)
     assert events == [
-        {"type": "user", "msg": "hola"},
+        {"type": "user", "msg": "hi"},
         {"type": "final", "status": "success", "msg": "done"},
     ]
 
@@ -39,7 +39,7 @@ def test_load_missing_file_returns_empty(tmp_path):
 
 def test_corrupt_lines_are_skipped(tmp_path):
     path = tmp_path / "h.jsonl"
-    path.write_text('{"type":"user","msg":"ok"}\nBASURA NO JSON\n', encoding="utf-8")
+    path.write_text('{"type":"user","msg":"ok"}\nGARBAGE NOT JSON\n', encoding="utf-8")
     events = vera_history.load_recent(path)
     assert events == [{"type": "user", "msg": "ok"}]
 

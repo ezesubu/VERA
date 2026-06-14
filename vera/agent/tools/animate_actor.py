@@ -1,20 +1,20 @@
 # vera/agent/tools/animate_actor.py
-"""Acción (destructiva): animar un actor existente o spawnear un Manny animado.
+"""Action (destructive): animate an existing actor or spawn an animated Manny.
 
-- animate: re-diagnostica el actor dentro del script (safeguard) y elige
-  estrategia: play_animation (skeletal con anims compatibles), movimiento
-  procedural (static + allow_procedural=true), o reporte honesto not_animable
-  (resultado válido, NO error).
-- spawn: SkeletalMeshActor con SKM_Manny_Simple, taggeado VERA_SPAWNED,
-  default frente a la cámara del editor, aterrizado al piso por line trace.
-- stop: detiene lo que VERA puso en movimiento — el tick procedural (restaurando
-  posición y rotación originales) y/o el playback single-node (devolviendo el
-  control al AnimBlueprint si el componente tiene uno).
+- animate: re-diagnoses the actor inside the script (safeguard) and picks a
+  strategy: play_animation (skeletal with compatible anims), procedural movement
+  (static + allow_procedural=true), or an honest not_animable report
+  (valid result, NOT an error).
+- spawn: SkeletalMeshActor with SKM_Manny_Simple, tagged VERA_SPAWNED,
+  by default in front of the editor camera, dropped to the floor by line trace.
+- stop: stops whatever VERA set in motion — the procedural tick (restoring the
+  original position and rotation) and/or the single-node playback (returning
+  control to the AnimBlueprint if the component has one).
 
-Regla de error: is_error=True solo si el sistema falló o el pedido fue
-imposible SIN efectos (data tiene "error" y NO tiene strategy_used). Si el
-spawn ocurrió pero la anim pedida no era compatible, el resultado vuelve
-completo con el detalle — el cerebro decide cómo seguir.
+Error rule: is_error=True only if the system failed or the request was
+impossible WITH no effects (data has "error" and NO strategy_used). If the
+spawn happened but the requested anim was not compatible, the result comes back
+complete with the detail — the brain decides how to proceed.
 """
 from __future__ import annotations
 
@@ -30,13 +30,13 @@ from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 class AnimateActorTool(Tool):
     name = "animate_actor"
     description = (
-        "Anima un actor del nivel (action=animate) o spawnea un personaje Manny "
-        "animado (action=spawn), o detiene una animación que VERA inició "
-        "(action=stop: corta el movimiento procedural restaurando la pose original "
-        "y devuelve el control al AnimBlueprint). Skeletal: reproduce una "
-        "AnimSequence compatible ('auto' elige idle/walk). Static: solo movimiento "
-        "procedural si allow_procedural=true; si no, explica por qué no es "
-        "animable. Modifica el nivel: requiere confirmación."
+        "Animates a level actor (action=animate) or spawns an animated Manny "
+        "character (action=spawn), or stops an animation VERA started "
+        "(action=stop: halts the procedural movement, restoring the original pose, "
+        "and returns control to the AnimBlueprint). Skeletal: plays a "
+        "compatible AnimSequence ('auto' picks idle/walk). Static: procedural "
+        "movement only if allow_procedural=true; otherwise it explains why it is "
+        "not animatable. Modifies the level: requires confirmation."
     )
     input_schema = {
         "type": "object",
@@ -44,24 +44,24 @@ class AnimateActorTool(Tool):
             "action": {"type": "string", "enum": ["animate", "spawn", "stop"]},
             "actor_name": {
                 "type": "string",
-                "description": "label del actor (requerido si action=animate o stop)",
+                "description": "actor label (required if action=animate or stop)",
             },
             "animation": {
                 "type": "string",
-                "description": "'auto' (default) o nombre de una AnimSequence compatible",
+                "description": "'auto' (default) or the name of a compatible AnimSequence",
             },
             "looping": {
                 "type": "boolean",
-                "description": "reproducir en loop (default true)",
+                "description": "play in a loop (default true)",
             },
             "location": {
                 "type": "array", "items": {"type": "number"},
                 "minItems": 3, "maxItems": 3,
-                "description": "spawn: [x,y,z]; default frente a la cámara del editor",
+                "description": "spawn: [x,y,z]; default in front of the editor camera",
             },
             "allow_procedural": {
                 "type": "boolean",
-                "description": "permitir fallback rotación/bobbing en static meshes",
+                "description": "allow rotation/bobbing fallback on static meshes",
             },
         },
         "required": ["action"],
@@ -76,8 +76,8 @@ class AnimateActorTool(Tool):
         if action == "animate":
             actor_name = (args.get("actor_name") or "").strip()
             if not actor_name:
-                return ToolResult("action=animate requiere actor_name", is_error=True)
-            ctx.report("AnimateActor", f"animando {actor_name!r} ({animation})")
+                return ToolResult("action=animate requires actor_name", is_error=True)
+            ctx.report("AnimateActor", f"animating {actor_name!r} ({animation})")
             script = build_animate_script(
                 actor_name, animation, looping,
                 bool(args.get("allow_procedural", False)))
@@ -85,30 +85,30 @@ class AnimateActorTool(Tool):
             location = args.get("location")
             if location is not None and (
                     not isinstance(location, (list, tuple)) or len(location) != 3):
-                return ToolResult("location debe ser [x, y, z]", is_error=True)
-            ctx.report("AnimateActor", f"spawneando Manny animado ({animation})")
+                return ToolResult("location must be [x, y, z]", is_error=True)
+            ctx.report("AnimateActor", f"spawning animated Manny ({animation})")
             script = build_spawn_script(animation, looping, location)
         elif action == "stop":
             actor_name = (args.get("actor_name") or "").strip()
             if not actor_name:
-                return ToolResult("action=stop requiere actor_name", is_error=True)
-            ctx.report("AnimateActor", f"deteniendo animación de {actor_name!r}")
+                return ToolResult("action=stop requires actor_name", is_error=True)
+            ctx.report("AnimateActor", f"stopping animation of {actor_name!r}")
             script = build_stop_script(actor_name)
         else:
             return ToolResult(
-                f"action inválida: {action!r} (usar 'animate', 'spawn' o 'stop')",
+                f"invalid action: {action!r} (use 'animate', 'spawn' or 'stop')",
                 is_error=True)
 
         try:
             resp = send_json(ctx.bridge_port, {"script": script})
         except (UEConnectionError, UETimeoutError) as e:
-            return ToolResult(f"no se pudo ejecutar en el editor: {e}", is_error=True)
+            return ToolResult(f"could not run in the editor: {e}", is_error=True)
         if not resp.get("success"):
-            return ToolResult(resp.get("error") or "fallo al animar", is_error=True)
+            return ToolResult(resp.get("error") or "failed to animate", is_error=True)
         data = parse_json_output(resp.get("output"))
         if data is None:
             return ToolResult(
-                f"respuesta no parseable del editor:\n{tail_of_output(resp.get('output'))}",
+                f"unparseable response from the editor:\n{tail_of_output(resp.get('output'))}",
                 is_error=True)
         rendered = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
         if data.get("error") and not data.get("strategy_used"):

@@ -1,17 +1,17 @@
 # vera/agent/tools/_anim_scripts.py
-"""Builders de scripts curados (lado editor) para las tools de animación.
+"""Builders of curated (editor-side) scripts for the animation tools.
 
-No es una Tool: construye los scripts Python que corren en el main thread del
-editor vía el bridge. Los parámetros se inyectan con json.dumps/repr sobre
-tokens __X__ — nunca interpolación cruda (labels con comillas no rompen nada).
-Los scripts imprimen JSON compacto en UNA línea; parse_json_output() lo
-recupera tolerando ruido de log.
+Not a Tool: it builds the Python scripts that run on the editor's main thread
+via the bridge. Parameters are injected with json.dumps/repr over __X__ tokens —
+never raw interpolation (labels with quotes break nothing).
+The scripts print compact JSON on ONE line; parse_json_output() recovers it,
+tolerating log noise.
 """
 from __future__ import annotations
 
 import json
 
-# --- Fragmento común: localizar actor + diagnóstico + elegir/reproducir -----
+# --- Common fragment: locate actor + diagnose + pick/play -------------------
 _COMMON = '''
 import unreal, json
 
@@ -44,7 +44,7 @@ def _diagnose(actor):
         info["current_anim_mode"] = str(comp.get_editor_property("animation_mode"))
         mesh = comp.get_skeletal_mesh_asset()
         if mesh is None:
-            info["notes"] = "SkeletalMeshComponent sin mesh asignado"
+            info["notes"] = "SkeletalMeshComponent with no mesh assigned"
         else:
             skel = mesh.get_editor_property("skeleton")
             if skel is not None:
@@ -63,14 +63,14 @@ def _diagnose(actor):
                 info["compatible_anims"].sort()
     elif static_comps:
         info["kind"] = "static"
-        info["notes"] = "static mesh: sin esqueleto, no admite AnimSequence"
+        info["notes"] = "static mesh: no skeleton, does not support AnimSequence"
     return info, comp
 
 def _pick_name(info, anim_req):
     if anim_req != "auto":
         return anim_req if anim_req in info["anim_paths"] else None
     names = info["compatible_anims"]
-    # nombre mas corto primero: MM_Idle le gana a MF_Pistol_Idle_ADS
+    # shortest name first: MM_Idle beats MF_Pistol_Idle_ADS
     idles = sorted((n for n in names if "idle" in n.lower()), key=len)
     walks = sorted((n for n in names if "walk" in n.lower()), key=len)
     return (idles + walks + list(names))[0] if names else None
@@ -86,9 +86,9 @@ def _pick_and_play(comp, info, anim_req, looping, out):
     anim = unreal.load_asset(path)
     comp.set_animation_mode(unreal.AnimationMode.ANIMATION_SINGLE_NODE)
     try:
-        # en el mundo del editor los skeletal meshes no tickean animacion
-        # sin este flag (verificado en vivo, UE 5.7); requiere ademas
-        # viewport en Realtime y editor con foco
+        # in the editor world skeletal meshes do not tick animation
+        # without this flag (verified live, UE 5.7); it also requires
+        # the viewport in Realtime and the editor focused
         comp.set_update_animation_in_editor(True)
     except Exception:
         pass
@@ -133,9 +133,9 @@ else:
     elif info["kind"] == "skeletal":
         out["strategy_used"] = "not_animable"
         out["skeleton"] = info["skeleton"]
-        out["reason"] = ("skeletal sin AnimSequences compatibles en /Game para el "
-                         "skeleton %s; opciones: importar un pack para ese rig o "
-                         "retargeting (fase 3). %s" % (info["skeleton"], info["notes"]))
+        out["reason"] = ("skeletal with no compatible AnimSequences in /Game for "
+                         "skeleton %s; options: import a pack for that rig or "
+                         "retargeting (phase 3). %s" % (info["skeleton"], info["notes"]))
     elif info["kind"] == "static" and allow_procedural:
         mod = sys.modules.get("vera_proc_anim")
         if mod is None:
@@ -161,12 +161,12 @@ else:
                                       "base": actor.get_actor_location(),
                                       "base_rot": actor.get_actor_rotation(), "t": 0.0}
         out["strategy_used"] = "procedural"
-        out["detail"] = "rotacion + bobbing via slate post tick (modulo vera_proc_anim)"
+        out["detail"] = "rotation + bobbing via slate post tick (module vera_proc_anim)"
     else:
         out["strategy_used"] = "not_animable"
-        out["reason"] = ("'%s' (%s) no tiene esqueleto: no admite animacion esqueletal. "
-                         "Opciones: allow_procedural=true (rotacion/bobbing) o un asset "
-                         "rigged equivalente." % (info["actor"], info["kind"]))
+        out["reason"] = ("'%s' (%s) has no skeleton: it does not support skeletal animation. "
+                         "Options: allow_procedural=true (rotation/bobbing) or an equivalent "
+                         "rigged asset." % (info["actor"], info["kind"]))
     print(json.dumps(out, sort_keys=True))
 '''
 
@@ -187,7 +187,7 @@ else:
         fwd = unreal.MathLibrary.get_forward_vector(cam_rot)
         location = [cam_loc.x + fwd.x * 400.0, cam_loc.y + fwd.y * 400.0, cam_loc.z]
         rot = unreal.Rotator(roll=0.0, pitch=0.0, yaw=cam_rot.yaw + 180.0)
-        # aterrizar el spawn: sin esto queda flotando a la altura de la camara
+        # drop the spawn to the floor: without this it floats at camera height
         hit = unreal.SystemLibrary.line_trace_single(
             ues.get_editor_world(),
             unreal.Vector(location[0], location[1], location[2] + 200.0),
@@ -195,7 +195,7 @@ else:
             unreal.TraceTypeQuery.TRACE_TYPE_QUERY1, False, [],
             unreal.DrawDebugTrace.NONE, True)
         if hit:
-            # HitResult no expone .location en 5.7: el Vector esta en to_tuple()[4]
+            # HitResult does not expose .location in 5.7: the Vector is in to_tuple()[4]
             location[2] = hit.to_tuple()[4].z + 2.0
     eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     actor = eas.spawn_actor_from_class(
@@ -203,8 +203,8 @@ else:
         unreal.Vector(location[0], location[1], location[2]), rot)
     comp = actor.get_editor_property("skeletal_mesh_component")
     comp.set_skeletal_mesh_asset(mesh)
-    # set_actor_label no uniquifica: sin esto, dos spawns comparten label y
-    # animate/stop posteriores apuntan al actor equivocado
+    # set_actor_label does not uniquify: without this, two spawns share a label and
+    # later animate/stop calls point to the wrong actor
     labels = {a.get_actor_label() for a in eas.get_all_level_actors()}
     label, i = "VERA_Manny", 1
     while label in labels:
@@ -285,7 +285,7 @@ def build_spawn_script(animation: str = "auto", looping: bool = True,
 
 
 def parse_json_output(output):
-    """Última línea JSON del output del editor (tolera ruido de log). None si no hay."""
+    """Last JSON line of the editor output (tolerates log noise). None if absent."""
     if not output:
         return None
     for line in reversed(str(output).strip().splitlines()):
@@ -299,6 +299,6 @@ def parse_json_output(output):
 
 
 def tail_of_output(output, limit: int = 500) -> str:
-    """Cola del output crudo del editor, acotada para no inflar el contexto."""
+    """Tail of the raw editor output, bounded so it does not bloat the context."""
     text = str(output or "")
     return text[-limit:] if len(text) > limit else text

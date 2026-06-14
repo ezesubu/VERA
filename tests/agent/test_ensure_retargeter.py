@@ -11,11 +11,11 @@ def _ok(payload):
     return {"success": True, "output": json.dumps(payload)}
 
 
-def test_es_destructiva():
+def test_is_destructive():
     assert EnsureRetargeterTool().destructive is True
 
 
-def test_encontrado_o_creado_devuelve_mapping(monkeypatch):
+def test_found_or_created_returns_mapping(monkeypatch):
     captured = {}
 
     def fake_send(port, payload, *a, **k):
@@ -33,37 +33,37 @@ def test_encontrado_o_creado_devuelve_mapping(monkeypatch):
     assert '"UE4Guy"' in captured["script"]
 
 
-def test_rig_faltante_es_error_que_apunta_a_ensure_ik_rig(monkeypatch):
+def test_missing_rig_is_error_pointing_to_ensure_ik_rig(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
         {"error": "missing_ik_rig", "missing": ["target"],
-         "detail": "usa ensure_ik_rig primero (un gate por asset)"}))
+         "detail": "use ensure_ik_rig first (one gate per asset)"}))
     res = EnsureRetargeterTool().execute(
         {"source": "A", "target": "B"}, ToolContext())
     assert res.is_error is True
     assert "ensure_ik_rig" in res.content
 
 
-def test_cero_chains_mapeadas_es_error(monkeypatch):
+def test_zero_chains_mapped_is_error(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
         {"error": "no_chains_mapped", "created_then_deleted": True,
-         "target_chains": ["Tentacle1"], "detail": "sin pares"}))
+         "target_chains": ["Tentacle1"], "detail": "no pairs"}))
     res = EnsureRetargeterTool().execute(
         {"source": "A", "target": "B"}, ToolContext())
     assert res.is_error is True
 
 
-def test_requiere_source_y_target(monkeypatch):
+def test_requires_source_and_target(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     t = EnsureRetargeterTool()
     assert t.execute({"source": "A"}, ToolContext()).is_error
     assert t.execute({"target": "B"}, ToolContext()).is_error
 
 
-def test_bridge_caido(monkeypatch):
+def test_bridge_down(monkeypatch):
     def boom(*a, **k):
-        raise UEConnectionError("editor cerrado")
+        raise UEConnectionError("editor closed")
     monkeypatch.setattr(mod, "send_json", boom)
     res = EnsureRetargeterTool().execute(
         {"source": "A", "target": "B"}, ToolContext())

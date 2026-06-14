@@ -12,7 +12,7 @@ def test_roundtrip(fake_bridge):
 
 
 def test_connection_refused_raises_typed_error():
-    # Puerto 1 está cerrado en cualquier máquina local
+    # Port 1 is closed on any local machine
     with pytest.raises(UEConnectionError):
         send_json(1, {"script": "x"}, timeout=2.0)
 

@@ -1,4 +1,4 @@
-"""Fixtures compartidas: un bridge TCP falso con handler configurable."""
+"""Shared fixtures: a fake TCP bridge with a configurable handler."""
 import json
 import socket
 import threading
@@ -8,9 +8,9 @@ import pytest
 
 @pytest.fixture
 def fake_bridge():
-    """Server TCP efímero que imita el framing del bridge de Unreal.
+    """Ephemeral TCP server that mimics the Unreal bridge's framing.
 
-    Uso: fake_bridge["handler"] = lambda payload: {...}; puerto en fake_bridge["port"].
+    Usage: fake_bridge["handler"] = lambda payload: {...}; port in fake_bridge["port"].
     """
     state = {"handler": lambda payload: {"success": True, "output": ""}}
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,7 +38,7 @@ def fake_bridge():
                     payload = json.loads(data.decode("utf-8"))
                     resp = state["handler"](payload)
                     conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-                except Exception as e:  # un handler roto no debe matar el thread
+                except Exception as e:  # a broken handler must not kill the thread
                     try:
                         err = json.dumps({"success": False, "error": f"fake_bridge handler: {e}"})
                         conn.sendall((err + "\n").encode("utf-8"))
@@ -54,7 +54,7 @@ def fake_bridge():
 
 @pytest.fixture
 def garbage_bridge():
-    """Server TCP que responde algo que no es JSON (protocolo roto)."""
+    """TCP server that responds with something that is not JSON (broken protocol)."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind(("127.0.0.1", 0))
@@ -76,7 +76,7 @@ def garbage_bridge():
                     if not chunk:
                         break
                     data += chunk
-                conn.sendall(b"esto no es json\n")
+                conn.sendall(b"this is not json\n")
 
     threading.Thread(target=serve, daemon=True).start()
     yield port

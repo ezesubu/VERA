@@ -1,11 +1,11 @@
 # vera/agent/tools/capture_actor.py
-"""Percepción visual (read-only): el cerebro VE un actor aislado.
+"""Visual perception (read-only): the brain SEES an isolated actor.
 
-"A por fuera, C por dentro": una sola llamada con restore garantizado; adentro
-scripts separados setup/frame/restore orquestados acá. El restore viaja en un
-finally del lado cliente: aunque un frame falle, el nivel vuelve a su estado.
-Captura vía SceneCapture2D (render a demanda, funciona con el editor minimizado);
-aislamiento por lista show-only — el nivel no se toca.
+"A on the outside, C on the inside": a single call with guaranteed restore;
+inside, separate setup/frame/restore scripts orchestrated here. The restore runs
+in a client-side finally: even if a frame fails, the level returns to its state.
+Capture via SceneCapture2D (render on demand, works with the editor minimized);
+isolation via show-only list — the level is not touched.
 """
 from __future__ import annotations
 
@@ -25,39 +25,39 @@ from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 MAX_FRAMES = 6
 FILE_TIMEOUT_S = 15.0
 POLL_INTERVAL_S = 0.3
-# tras el scrub, el editor necesita tickear (~60fps visible) para evaluar la
-# pose ANTES de capturar; sin esta espera la captura ve la pose anterior
+# after the scrub, the editor needs to tick (~60fps visible) to evaluate the
+# pose BEFORE capturing; without this wait the capture sees the previous pose
 POSE_SETTLE_S = 0.25
 
 
 class CaptureActorTool(Tool):
     name = "capture_actor"
     description = (
-        "Percepción visual (read-only): aísla un actor del nivel (oculta el "
-        "resto, fondo neutro) y captura N frames a 640x360 que te llegan como "
-        "imágenes — usala para VER un actor o juzgar una animación. "
-        "mode=anim recorre una animación en N tiempos (requiere skeletal); "
-        "mode=orbit lo rodea en N ángulos (cualquier actor). Restaura el nivel "
-        "automáticamente al terminar."
+        "Visual perception (read-only): isolates a level actor (hides the "
+        "rest, neutral background) and captures N frames at 640x360 that come back "
+        "to you as images — use it to SEE an actor or judge an animation. "
+        "mode=anim scrubs an animation across N times (requires skeletal); "
+        "mode=orbit circles it across N angles (any actor). Restores the level "
+        "automatically when done."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "actor_name": {
                 "type": "string",
-                "description": "label del actor (match exacto o parcial)",
+                "description": "actor label (exact or partial match)",
             },
             "mode": {
                 "type": "string", "enum": ["anim", "orbit"],
-                "description": "default: anim si hay animation, sino orbit",
+                "description": "default: anim if animation is given, otherwise orbit",
             },
             "animation": {
                 "type": "string",
-                "description": "solo mode=anim: 'auto' o nombre de AnimSequence",
+                "description": "mode=anim only: 'auto' or AnimSequence name",
             },
             "frames": {
                 "type": "integer", "minimum": 1, "maximum": 6,
-                "description": "cantidad de capturas (default 4)",
+                "description": "number of captures (default 4)",
             },
         },
         "required": ["actor_name"],
@@ -67,29 +67,29 @@ class CaptureActorTool(Tool):
     def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         actor_name = (args.get("actor_name") or "").strip()
         if not actor_name:
-            return ToolResult("falta actor_name (label del actor)", is_error=True)
+            return ToolResult("missing actor_name (actor label)", is_error=True)
         try:
             frames = int(args.get("frames", 4))
         except (TypeError, ValueError):
-            return ToolResult("frames debe ser un entero entre 1 y 6", is_error=True)
+            return ToolResult("frames must be an integer between 1 and 6", is_error=True)
         if not 1 <= frames <= MAX_FRAMES:
-            return ToolResult("frames debe estar entre 1 y 6", is_error=True)
+            return ToolResult("frames must be between 1 and 6", is_error=True)
         animation = args.get("animation")
         mode = args.get("mode") or ("anim" if animation else "orbit")
         if mode not in ("anim", "orbit"):
-            return ToolResult(f"mode inválido: {mode!r} (anim|orbit)", is_error=True)
+            return ToolResult(f"invalid mode: {mode!r} (anim|orbit)", is_error=True)
         if mode == "orbit" and animation:
-            return ToolResult("animation solo aplica a mode=anim", is_error=True)
+            return ToolResult("animation only applies to mode=anim", is_error=True)
         if mode == "anim" and not animation:
             animation = "auto"
 
-        ctx.report("CaptureActor", f"aislando {actor_name!r} ({mode}, {frames} frames)")
+        ctx.report("CaptureActor", f"isolating {actor_name!r} ({mode}, {frames} frames)")
         setup = self._send(ctx, build_setup_script(
             actor_name, animation if mode == "anim" else None))
         if isinstance(setup, ToolResult):
             return setup
         if setup.get("error"):
-            # los errores del setup ocurren ANTES de mutar el nivel: sin restore
+            # setup errors happen BEFORE mutating the level: no restore
             return ToolResult(
                 json.dumps(setup, ensure_ascii=False, sort_keys=True), is_error=True)
 
@@ -97,10 +97,10 @@ class CaptureActorTool(Tool):
         if mode == "anim":
             length = float(setup.get("anim_length") or 0.0)
             if length <= 0.0:
-                # el setup YA mutó el nivel: hay que pasar por el restore igual
+                # setup ALREADY mutated the level: we must go through restore anyway
                 values = []
                 warnings.append(
-                    f"anim_length inválida ({length}): nada para scrubear")
+                    f"invalid anim_length ({length}): nothing to scrub")
             else:
                 values = [round((i + 0.5) / frames * length, 3)
                           for i in range(frames)]
@@ -114,9 +114,9 @@ class CaptureActorTool(Tool):
             for i, value in enumerate(values):
                 fname = f"vera_cap_{nonce}_{i}.png"
                 ctx.report("CaptureActor", f"frame {i + 1}/{len(values)}")
-                # pose y captura en round-trips separados: el editor evalua la
-                # pose entre mensajes; capturar en el mismo call stack veria
-                # la pose anterior (off-by-one, hallado en E2E vivo)
+                # pose and capture in separate round-trips: the editor evaluates
+                # the pose between messages; capturing in the same call stack would
+                # see the previous pose (off-by-one, found in live E2E)
                 pose = self._send(ctx, build_pose_script(mode, value))
                 if isinstance(pose, ToolResult):
                     warnings.append(f"frame {i} (pose): {pose.content}")
@@ -136,16 +136,20 @@ class CaptureActorTool(Tool):
                 path = os.path.join(shot_dir, fname)
                 data = self._wait_for_file(path)
                 if data is None:
-                    warnings.append(f"frame {i}: timeout esperando {fname}")
+                    warnings.append(f"frame {i}: timeout waiting for {fname}")
                     break
                 files.append(path)
                 images.append(image_block(base64.b64encode(data).decode("ascii")))
+                # Surface the shot in the VERA chat too (the model already gets the
+                # base64; this lets the USER see each frame inline as it's captured).
+                if ctx.emit:
+                    ctx.emit({"type": "image", "path": path})
         finally:
             restore_info = self._restore(ctx)
 
         meta = {
             "actor": setup.get("actor"), "mode": mode,
-            "frames_capturados": len(images), "files": files,
+            "frames_captured": len(images), "files": files,
             "isolation": setup.get("isolation"),
             "restored": bool(restore_info.get("restored")),
         }
@@ -168,22 +172,22 @@ class CaptureActorTool(Tool):
     # ---- helpers ----
 
     def _send(self, ctx: ToolContext, script: str):
-        """Un round-trip por el bridge: dict parseado o ToolResult de error."""
+        """One round-trip over the bridge: parsed dict or an error ToolResult."""
         try:
             resp = send_json(ctx.bridge_port, {"script": script})
         except (UEConnectionError, UETimeoutError) as e:
-            return ToolResult(f"bridge caído: {e}", is_error=True)
+            return ToolResult(f"bridge down: {e}", is_error=True)
         if not resp.get("success"):
-            return ToolResult(resp.get("error") or "fallo en el editor", is_error=True)
+            return ToolResult(resp.get("error") or "editor failure", is_error=True)
         data = parse_json_output(resp.get("output"))
         if data is None:
             return ToolResult(
-                f"respuesta no parseable:\n{tail_of_output(resp.get('output'))}",
+                f"unparseable response:\n{tail_of_output(resp.get('output'))}",
                 is_error=True)
         return data
 
     def _restore(self, ctx: ToolContext) -> dict:
-        """Best-effort y nunca lanza: el finally no debe enmascarar el error real."""
+        """Best-effort and never raises: the finally must not mask the real error."""
         try:
             data = self._send(ctx, build_restore_script())
         except Exception as e:  # noqa: BLE001
@@ -191,13 +195,13 @@ class CaptureActorTool(Tool):
         if isinstance(data, ToolResult):
             return {"restored": False, "reason": str(data.content)}
         if data.get("reason") == "no_state":
-            # setup nunca llegó a mutar: no había nada que restaurar
+            # setup never got to mutate: there was nothing to restore
             return {"restored": True, "reason": "no_state"}
         return data
 
     def _wait_for_file(self, path: str, timeout=None, interval=None):
-        """Espera a que el PNG exista con tamaño estable. bytes o None.
-        Lee los límites del módulo en runtime para que los tests los achiquen."""
+        """Waits for the PNG to exist with a stable size. bytes or None.
+        Reads the module limits at runtime so tests can shrink them."""
         timeout = FILE_TIMEOUT_S if timeout is None else timeout
         interval = POLL_INTERVAL_S if interval is None else interval
         deadline = time.monotonic() + timeout

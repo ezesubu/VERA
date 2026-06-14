@@ -1,14 +1,15 @@
-"""Adaptador que duck-typea `anthropic.Anthropic` sobre un backend OpenAI-compatible.
+"""Adapter that duck-types `anthropic.Anthropic` over an OpenAI-compatible backend.
 
-OpenAI, LM Studio (local) y Gemini (endpoint OpenAI-compatible) hablan el mismo
-formato `chat.completions`. Este cliente expone la MISMA superficie que el
-`AgentLoop` ya usa de Anthropic — `.messages.stream(model, max_tokens, thinking,
-system, tools, messages)` como context manager con `.get_final_message()` →
-objeto con `.stop_reason` y `.content` (bloques) — traduciendo en ambos sentidos.
+OpenAI, LM Studio (local) and Gemini (OpenAI-compatible endpoint) all speak the
+same `chat.completions` format. This client exposes the SAME surface the
+`AgentLoop` already uses from Anthropic — `.messages.stream(model, max_tokens,
+thinking, system, tools, messages)` as a context manager with
+`.get_final_message()` → an object with `.stop_reason` and `.content` (blocks) —
+translating in both directions.
 
-El historial canónico se mantiene en forma Anthropic; se traduce al vuelo a
-formato OpenAI en cada llamada. Por eso se puede cambiar de proveedor a mitad de
-sesión sin perder el historial.
+The canonical history is kept in Anthropic form; it is translated on the fly to
+OpenAI format on every call. That is why you can switch providers mid-session
+without losing the history.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from types import SimpleNamespace
 from typing import Any, List, Optional
 
 
-# --------- bloques de respuesta (re-introspectables: el loop los re-mete) ---------
+# --------- response blocks (re-introspectable: the loop feeds them back in) ---------
 
 class TextBlock(SimpleNamespace):
     def __init__(self, text: str) -> None:
@@ -30,13 +31,13 @@ class ToolUseBlock(SimpleNamespace):
 
 
 class _Message(SimpleNamespace):
-    """Mensaje final normalizado: imita anthropic.types.Message."""
+    """Normalized final message: mimics anthropic.types.Message."""
 
     def __init__(self, stop_reason: str, content: list) -> None:
         super().__init__(stop_reason=stop_reason, content=content)
 
 
-# --------------------------- traducción SALIDA ---------------------------
+# --------------------------- OUTBOUND translation ---------------------------
 
 def _translate_tools(tools: Optional[List[dict]]) -> Optional[List[dict]]:
     """Anthropic {name,description,input_schema} → OpenAI function schema."""
@@ -56,14 +57,14 @@ def _translate_tools(tools: Optional[List[dict]]) -> Optional[List[dict]]:
 
 
 def _block_attr(block: Any, key: str, default=None):
-    """Lee `key` de un bloque que puede ser dict o un objeto con atributos."""
+    """Reads `key` from a block that may be a dict or an object with attributes."""
     if isinstance(block, dict):
         return block.get(key, default)
     return getattr(block, key, default)
 
 
 def _stringify_content(content: Any) -> str:
-    """tool_result.content puede ser str o lista de bloques (texto/imagen)."""
+    """tool_result.content may be a str or a list of blocks (text/image)."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -78,7 +79,7 @@ def _stringify_content(content: Any) -> str:
 
 
 def _translate_assistant(content_blocks: list) -> dict:
-    """Lista de bloques Anthropic → mensaje assistant OpenAI (texto + tool_calls)."""
+    """List of Anthropic blocks → OpenAI assistant message (text + tool_calls)."""
     text_parts: List[str] = []
     tool_calls: List[dict] = []
     for block in content_blocks:
@@ -100,8 +101,27 @@ def _translate_assistant(content_blocks: list) -> dict:
     return msg
 
 
+def _translate_user_multimodal(content_blocks: list) -> dict:
+    """List of Anthropic user blocks (text + image) → multimodal OpenAI user
+    message. The base64 image is inlined as a data URL."""
+    parts: List[dict] = []
+    for block in content_blocks:
+        btype = _block_attr(block, "type")
+        if btype == "text":
+            parts.append({"type": "text", "text": _block_attr(block, "text", "")})
+        elif btype == "image":
+            source = _block_attr(block, "source", {}) or {}
+            media_type = _block_attr(source, "media_type", "image/png")
+            data = _block_attr(source, "data", "")
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{data}"},
+            })
+    return {"role": "user", "content": parts}
+
+
 def _translate_tool_results(content_blocks: list) -> List[dict]:
-    """Lista de tool_result Anthropic → un mensaje role:tool por cada uno."""
+    """List of Anthropic tool_result → one role:tool message per result."""
     out = []
     for block in content_blocks:
         if _block_attr(block, "type") == "tool_result":
@@ -124,8 +144,12 @@ def _translate_messages(system: Optional[str], messages: List[dict]) -> List[dic
             if isinstance(content, str):
                 out.append({"role": "user", "content": content})
             elif isinstance(content, list):
-                # user-con-tool_results → mensajes role:tool
-                out.extend(_translate_tool_results(content))
+                # A user-list turn is either tool_results (→ role:tool) or a
+                # multimodal turn (text + attached image → multimodal user).
+                if any(_block_attr(b, "type") in ("text", "image") for b in content):
+                    out.append(_translate_user_multimodal(content))
+                else:
+                    out.extend(_translate_tool_results(content))
         elif role == "assistant":
             if isinstance(content, str):
                 out.append({"role": "assistant", "content": content})
@@ -136,7 +160,7 @@ def _translate_messages(system: Optional[str], messages: List[dict]) -> List[dic
     return out
 
 
-# --------------------------- traducción ENTRADA ---------------------------
+# --------------------------- INBOUND translation ---------------------------
 
 def _translate_response(completion: Any) -> _Message:
     message = completion.choices[0].message
@@ -154,18 +178,18 @@ def _translate_response(completion: Any) -> _Message:
                 parsed = {}
             blocks.append(ToolUseBlock(id=tc.id, name=tc.function.name, input=parsed))
         return _Message("tool_use", blocks)
-    if not blocks:  # turno vacío: nunca devolver content:[] al loop
+    if not blocks:  # empty turn: never return content:[] to the loop
         blocks.append(TextBlock(""))
     return _Message("end_turn", blocks)
 
 
-# ------------------------------- el cliente -------------------------------
+# ------------------------------- the client -------------------------------
 
 class _StreamCtx:
-    """Context manager iterable que imita la superficie de `messages.stream`.
+    """Iterable context manager that mimics the `messages.stream` surface.
 
-    Hace la llamada al backend de forma EAGER en __enter__ (no se emiten eventos
-    de thinking en vivo para estos proveedores; el loop pinta el texto final).
+    It calls the backend EAGERLY in __enter__ (no live thinking events are
+    emitted for these providers; the loop renders the final text).
     """
 
     def __init__(self, create_fn, kwargs) -> None:
@@ -182,7 +206,7 @@ class _StreamCtx:
         return False
 
     def __iter__(self):
-        return iter(())  # sin streaming de eventos en v1
+        return iter(())  # no event streaming in v1
 
     def get_final_message(self) -> _Message:
         return self._final
@@ -194,7 +218,7 @@ class _Messages:
 
     def stream(self, *, model=None, max_tokens=None, thinking=None,
                system=None, tools=None, messages=None, **_ignored) -> _StreamCtx:
-        # `thinking` se acepta y se ignora a propósito.
+        # `thinking` is accepted and ignored on purpose.
         kwargs: dict = {
             "model": model or self._owner.model,
             "messages": _translate_messages(system, messages or []),
@@ -204,7 +228,7 @@ class _Messages:
         if translated_tools:
             kwargs["tools"] = translated_tools
         else:
-            # algunos backends OpenAI rechazan tool_choice sin tools
+            # some OpenAI backends reject tool_choice without tools
             kwargs.pop("tool_choice", None)
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
@@ -212,10 +236,10 @@ class _Messages:
 
 
 class OpenAICompatClient:
-    """Cliente con forma de `anthropic.Anthropic` sobre un backend OpenAI.
+    """Client shaped like `anthropic.Anthropic` over an OpenAI backend.
 
-    `client` es inyectable para tests; en producción se crea un `openai.OpenAI`
-    con `base_url`/`api_key`.
+    `client` is injectable for tests; in production an `openai.OpenAI` is created
+    with `base_url`/`api_key`.
     """
 
     def __init__(self, base_url: str, api_key: Optional[str], model: str,
@@ -224,7 +248,7 @@ class OpenAICompatClient:
         self.api_key = api_key
         self.model = model
         if client is None:
-            import openai  # lazy: solo necesario en producción
+            import openai  # lazy: only needed in production
             client = openai.OpenAI(base_url=base_url, api_key=api_key or "not-needed")
         self._client = client
         self.messages = _Messages(self)

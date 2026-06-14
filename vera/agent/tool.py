@@ -1,4 +1,4 @@
-"""Contrato de herramientas del cerebro de VERA."""
+"""Tool contract for VERA's brain."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,20 +7,20 @@ from typing import Any, Callable, Optional
 
 @dataclass
 class ToolResult:
-    """Resultado de ejecutar una tool. `content` vuelve al modelo.
+    """Result of executing a tool. `content` goes back to the model.
 
-    `content` puede ser un string (texto plano) o una lista de content blocks
-    de la API — p.ej. texto + imagen para tools de percepción (ver `image_block`).
+    `content` can be a string (plain text) or a list of API content blocks
+    — e.g. text + image for perception tools (see `image_block`).
     """
     content: Any
     is_error: bool = False
 
 
 def image_block(data_b64: str, media_type: str = "image/png") -> dict:
-    """Content block de imagen (base64) para devolver en un ToolResult.
+    """Image content block (base64) to return inside a ToolResult.
 
-    `media_type` aceptado por la API: "image/png", "image/jpeg",
-    "image/gif", "image/webp". Otro valor causa un 400.
+    `media_type` accepted by the API: "image/png", "image/jpeg",
+    "image/gif", "image/webp". Any other value causes a 400.
     """
     return {
         "type": "image",
@@ -30,35 +30,42 @@ def image_block(data_b64: str, media_type: str = "image/png") -> dict:
 
 @dataclass
 class ToolContext:
-    """Servicios que el AgentLoop le pasa a cada tool en execute()."""
+    """Services the AgentLoop passes to each tool in execute()."""
     bridge_port: int = 9878
-    emit: Optional[Callable[[dict], None]] = None  # emisor de eventos a la UI
-    llm: Any = None                                 # cliente LLM para sub-llamadas
+    emit: Optional[Callable[[dict], None]] = None  # event emitter to the UI
+    llm: Any = None                                 # LLM client for sub-calls
 
     def report(self, agent: str, msg: str) -> None:
-        """Emite un evento de progreso si hay canal conectado (best-effort)."""
+        """Emit a progress event if a channel is connected (best-effort)."""
         if self.emit:
             self.emit({"type": "progress", "agent": agent, "msg": msg})
 
 
 class Tool:
-    """Clase base de toda herramienta. Subclasealá y definí los atributos.
+    """Base class of every tool. Subclass it and define the attributes.
 
-    Un contribuidor agrega una capacidad creando un archivo en
-    vera/agent/tools/ con una subclase de Tool — el ToolRegistry la descubre.
+    A contributor adds a capability by creating a file in
+    vera/agent/tools/ with a Tool subclass — the ToolRegistry discovers it.
     """
     name: str = ""
-    description: str = ""           # qué hace + CUÁNDO usarla (lo lee el modelo)
-    input_schema: dict = {}         # JSON Schema de los argumentos
-    destructive: bool = False       # ¿requiere confirmación? (irreversible)
+    description: str = ""           # what it does + WHEN to use it (read by the model)
+    input_schema: dict = {}         # JSON Schema of the arguments
+    destructive: bool = False       # requires confirmation? (irreversible)
 
     def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         raise NotImplementedError
 
-    def to_anthropic(self) -> dict:
-        """Forma que espera el parámetro `tools` de la Messages API."""
+    def to_anthropic(self, compact: bool = False) -> dict:
+        """Shape expected by the `tools` parameter of the Messages API.
+
+        `compact=True` trims the `description` to its first sentence to shrink
+        the per-turn payload for small local-model contexts.
+        `name`/`input_schema` stay untouched."""
+        from vera.agent.registry import _first_sentence
+
+        description = _first_sentence(self.description) if compact else self.description
         return {
             "name": self.name,
-            "description": self.description,
+            "description": description,
             "input_schema": self.input_schema,
         }

@@ -11,11 +11,11 @@ def _ok(payload):
     return {"success": True, "output": json.dumps(payload)}
 
 
-def test_es_destructiva():
+def test_is_destructive():
     assert RetargetAnimationsTool().destructive is True
 
 
-def test_batch_feliz_con_play(monkeypatch):
+def test_batch_happy_with_play(monkeypatch):
     captured = {}
 
     def fake_send(port, payload, *a, **k):
@@ -33,7 +33,7 @@ def test_batch_feliz_con_play(monkeypatch):
     assert "play_first = True" in captured["script"]
 
 
-def test_auto_por_default(monkeypatch):
+def test_auto_by_default(monkeypatch):
     captured = {}
 
     def fake_send(port, payload, *a, **k):
@@ -47,18 +47,18 @@ def test_auto_por_default(monkeypatch):
     assert '"auto"' in captured["script"]
 
 
-def test_idempotente_todo_skipped_no_es_error(monkeypatch):
+def test_idempotent_all_skipped_is_not_error(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
-        {"created_anims": [], "skipped": ["MM_Idle (ya retargeteada)"],
+        {"created_anims": [], "skipped": ["MM_Idle (already retargeted)"],
          "played": None}))
     res = RetargetAnimationsTool().execute(
         {"retargeter_path": "/Game/R/RTG", "animations": ["MM_Idle"]},
         ToolContext())
     assert res.is_error is False
-    assert "ya retargeteada" in res.content
+    assert "already retargeted" in res.content
 
 
-def test_retargeter_inexistente_es_error(monkeypatch):
+def test_nonexistent_retargeter_is_error(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
         {"error": "retargeter_not_found", "path": "/Game/Nada"}))
     res = RetargetAnimationsTool().execute(
@@ -66,18 +66,18 @@ def test_retargeter_inexistente_es_error(monkeypatch):
     assert res.is_error is True
 
 
-def test_play_first_requiere_actor(monkeypatch):
+def test_play_first_requires_actor(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     res = RetargetAnimationsTool().execute(
         {"retargeter_path": "/Game/R", "play_first": True}, ToolContext())
     assert res.is_error is True
 
 
-def test_bridge_caido(monkeypatch):
+def test_bridge_down(monkeypatch):
     def boom(*a, **k):
-        raise UEConnectionError("editor cerrado")
+        raise UEConnectionError("editor closed")
     monkeypatch.setattr(mod, "send_json", boom)
     res = RetargetAnimationsTool().execute(
         {"retargeter_path": "/Game/R"}, ToolContext())

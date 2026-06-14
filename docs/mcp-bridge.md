@@ -1,69 +1,69 @@
-# VERA MCP Bridge — uso
+# VERA MCP Bridge — usage
 
-Claude Code controla el editor de Unreal vía el server MCP `vera-ue` (registrado
-en `.mcp.json`). Herramientas: `ue_exec`, `ue_screenshot`, `ue_log`, `ue_status`,
+Claude Code controls the Unreal editor via the `vera-ue` MCP server (registered
+in `.mcp.json`). Tools: `ue_exec`, `ue_screenshot`, `ue_log`, `ue_status`,
 `vera_command`.
 
-## Requisitos
+## Requirements
 
-1. Proyecto `UE57` abierto en el editor (el bridge auto-arranca vía
-   `Content/Python/init_unreal.py`; requiere el plugin "Python Editor Script
-   Plugin" habilitado).
-   - Si el editor ya estaba abierto cuando se instaló el bridge, cargalo una
-     vez a mano: en el Output Log, pestaña Python, ejecutar `import vera_bridge`.
-2. `pip install -e .[dev]` en `E:\PCW\VERA` (instala `mcp`).
-3. Opcional para `vera_command`: backend corriendo — `python -m vera.core.vera_server`.
+1. The `UE57` project open in the editor (the bridge auto-starts via
+   `Content/Python/init_unreal.py`; requires the "Python Editor Script
+   Plugin" enabled).
+   - If the editor was already open when the bridge was installed, load it
+     once by hand: in the Output Log, Python tab, run `import vera_bridge`.
+2. `pip install -e .[dev]` in `E:\PCW\VERA` (installs `mcp`).
+3. Optional for `vera_command`: backend running — `python -m vera.core.vera_server`.
 
-## Seguridad
+## Security
 
-El bridge ejecuta Python ARBITRARIO sin autenticación en `127.0.0.1:9878`:
-cualquier proceso local puede controlar el editor mientras esté abierto. Es un
-diseño aceptado para herramienta de desarrollo local — no usar en máquinas
-compartidas/multiusuario. Nunca cambiar el bind a `0.0.0.0`.
+The bridge runs ARBITRARY Python without authentication on `127.0.0.1:9878`:
+any local process can control the editor while it's open. This is an accepted
+design for a local development tool — do not use it on shared/multi-user
+machines. Never change the bind to `0.0.0.0`.
 
-## Nota sobre el intérprete
+## Note about the interpreter
 
-`.mcp.json` usa la ruta ABSOLUTA de Python 3.14
-(`C:/Users/ezesu/AppData/Local/Programs/Python/Python314/python.exe`): esta
-máquina tiene varios `python.exe` en el PATH (incluido el stub de Microsoft
-Store) y Claude Code lanza el server desde su propio entorno, no desde tu venv.
-Si movés el proyecto a otra máquina, actualizá esa ruta.
+`.mcp.json` uses the ABSOLUTE path to Python 3.14
+(`C:/Users/ezesu/AppData/Local/Programs/Python/Python314/python.exe`): this
+machine has several `python.exe` on the PATH (including the Microsoft Store
+stub) and Claude Code launches the server from its own environment, not from
+your venv. If you move the project to another machine, update that path.
 
-## Smoke test (manual, con el editor abierto)
+## Smoke test (manual, with the editor open)
 
-Desde una sesión de Claude Code en este repo (reiniciada para que cargue `.mcp.json`):
+From a Claude Code session in this repo (restarted so it loads `.mcp.json`):
 
-1. `ue_status` → bridge online, versión del engine visible.
+1. `ue_status` → bridge online, engine version visible.
 2. `ue_exec("import unreal\nprint(unreal.SystemLibrary.get_engine_version())")`
-   → imprime la versión.
-3. `ue_screenshot()` → devuelve un PNG del viewport. ⚠️ Requiere que el editor
-   tenga foco o esté renderizando (UE throttlea el render en background y la
-   captura asíncrona no se materializa — limitación conocida, fix pendiente).
-4. `ue_log(50)` → últimas líneas del Output Log.
+   → prints the version.
+3. `ue_screenshot()` → returns a PNG of the viewport. ⚠️ Requires the editor
+   to have focus or be rendering (UE throttles rendering in the background and
+   the async capture never materializes — known limitation, fix pending).
+4. `ue_log(50)` → last lines of the Output Log.
 
-## Test de aceptación — "loop con ojos"
+## Acceptance test — "loop with eyes"
 
-Pedirle a Claude Code: *"Construí un puente de vidrio entre las dos plataformas
-y verificá visualmente que quedó bien."* Claude debe: ejecutar scripts con
-`ue_exec`, mirar el resultado con `ue_screenshot`, diagnosticar con `ue_log`
-si algo falla, y corregir sin intervención del usuario.
+Ask Claude Code: *"Build a glass bridge between the two platforms and visually
+verify that it turned out right."* Claude must: run scripts with `ue_exec`,
+look at the result with `ue_screenshot`, diagnose with `ue_log` if something
+fails, and fix it without user intervention.
 
-## Variables de entorno
+## Environment variables
 
-| Variable | Default | Para qué |
+| Variable | Default | Purpose |
 |---|---|---|
-| `VERA_UE_PROJECT_DIR` | `<repo>/UE57` | Localiza `Saved/Logs` y `Saved/Screenshots` |
-| `VERA_BRIDGE_PORT` | `9878` | Puerto del bridge en el editor |
-| `VERA_BACKEND_PORT` | `9880` | Puerto del backend de agentes |
-| `VERA_BRIDGE_NO_AUTOSTART` | (vacío) | Si está seteada, `vera_bridge` no auto-arranca (tests) |
+| `VERA_UE_PROJECT_DIR` | `<repo>/UE57` | Locates `Saved/Logs` and `Saved/Screenshots` |
+| `VERA_BRIDGE_PORT` | `9878` | Bridge port in the editor |
+| `VERA_BACKEND_PORT` | `9880` | Agent backend port |
+| `VERA_BRIDGE_NO_AUTOSTART` | (empty) | If set, `vera_bridge` does not auto-start (tests) |
 
-## Detalles de comportamiento
+## Behavior details
 
-- `ue_exec` es stateless: cada llamada usa un namespace nuevo (variables e
-  imports no persisten entre llamadas).
-- Si un script excede el timeout del cliente, el bridge NO lo aborta (el main
-  thread de UE no se puede interrumpir); `ue_exec` devuelve `TIMEOUT:` y el
-  script sigue corriendo. El bridge tiene su propio timeout de 120 s para
-  stalls del tick (diálogos modales).
-- Los screenshots se acumulan en `UE57/Saved/Screenshots/WindowsEditor/`
-  (`vera_*.png`); limpieza pendiente como mejora futura.
+- `ue_exec` is stateless: each call uses a fresh namespace (variables and
+  imports do not persist between calls).
+- If a script exceeds the client timeout, the bridge does NOT abort it (UE's
+  main thread cannot be interrupted); `ue_exec` returns `TIMEOUT:` and the
+  script keeps running. The bridge has its own 120 s timeout for tick stalls
+  (modal dialogs).
+- Screenshots accumulate in `UE57/Saved/Screenshots/WindowsEditor/`
+  (`vera_*.png`); cleanup is pending as a future improvement.

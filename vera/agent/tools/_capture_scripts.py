@@ -1,13 +1,13 @@
 # vera/agent/tools/_capture_scripts.py
-"""Builders de scripts curados para capture_actor (percepción visual).
+"""Builders of curated scripts for capture_actor (visual perception).
 
-Captura vía SceneCapture2D + RenderTarget: renderiza a demanda sin depender
-del viewport (funciona con el editor minimizado/throttleado — verificado en
-vivo; take_high_res_screenshot NO). Aislamiento quirúrgico con la lista
-show-only del capture component: no se oculta ni se toca NADA del nivel.
-El estado de la sesión vive en sys.modules["vera_capture_state"] DEL EDITOR,
-así el restore es idempotente (pop). Mismas reglas que _anim_scripts:
-inyección por tokens __X__ con json.dumps/repr y JSON compacto de una línea.
+Capture via SceneCapture2D + RenderTarget: renders on demand without depending
+on the viewport (works with the editor minimized/throttled — verified live;
+take_high_res_screenshot does NOT). Surgical isolation via the capture
+component's show-only list: NOTHING in the level is hidden or touched.
+Session state lives in the EDITOR's sys.modules["vera_capture_state"],
+so the restore is idempotent (pop). Same rules as _anim_scripts:
+injection via __X__ tokens with json.dumps/repr and compact one-line JSON.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ else:
     anim_name = _pick_name(info, anim_req) if anim_req is not None else None
     if anim_req is not None and info["kind"] != "skeletal":
         print(json.dumps({"error": "not_skeletal", "kind": info["kind"],
-                          "hint": "usar mode=orbit"}, sort_keys=True))
+                          "hint": "use mode=orbit"}, sort_keys=True))
     elif anim_req is not None and anim_name is None:
         print(json.dumps({"error": "no_anims", "requested": anim_req,
                           "skeleton": info["skeleton"],
@@ -50,8 +50,8 @@ else:
 
         if anim_name is not None:
             st.prev_anim_mode = comp.get_editor_property("animation_mode")
-            # sin ALWAYS_TICK los skel comps solo evaluan pose al ser
-            # renderizados; guardamos la opcion previa para revertirla
+            # without ALWAYS_TICK the skel comps only evaluate pose when
+            # rendered; we save the previous option to revert it
             st.prev_tick_option = comp.get_editor_property(
                 "visibility_based_anim_tick_option")
             comp.set_editor_property("visibility_based_anim_tick_option",
@@ -77,10 +77,10 @@ else:
         rt = unreal.RenderingLibrary.create_render_target2d(
             world, 640, 360, unreal.TextureRenderTargetFormat.RTF_RGBA8)
         cap.set_editor_property("texture_target", rt)
-        # SCS_BASE_COLOR rinde blanco inutil en 5.7: usar FINAL_COLOR_LDR
+        # SCS_BASE_COLOR renders useless white in 5.7: use FINAL_COLOR_LDR
         cap.set_editor_property("capture_source",
                                 unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR)
-        # la property show_only_actors no es editable ("templates"): usar el setter
+        # the show_only_actors property is not editable ("templates"): use the setter
         cap.set_editor_property("primitive_render_mode",
             unreal.SceneCapturePrimitiveRenderMode.PRM_USE_SHOW_ONLY_LIST)
         cap.show_only_actor_components(actor, True)
@@ -158,7 +158,7 @@ else:
 
 
 def build_setup_script(actor_name: str, animation) -> str:
-    """`animation=None` => mode orbit (no toca la animación del actor)."""
+    """`animation=None` => orbit mode (does not touch the actor's animation)."""
     anim_literal = json.dumps(animation) if animation is not None else "None"
     return (_SETUP_TEMPLATE
             .replace("__LABEL__", json.dumps(actor_name))
@@ -166,8 +166,8 @@ def build_setup_script(actor_name: str, animation) -> str:
 
 
 def build_pose_script(mode: str, value: float) -> str:
-    """Solo posa (scrub o mover el rig). La captura va en OTRO round-trip:
-    capture_scene en el mismo call stack veria la pose anterior."""
+    """Only poses (scrub or move the rig). The capture goes in ANOTHER round-trip:
+    capture_scene in the same call stack would see the previous pose."""
     return (_POSE_TEMPLATE
             .replace("__MODE__", json.dumps(mode))
             .replace("__VALUE__", repr(float(value))))

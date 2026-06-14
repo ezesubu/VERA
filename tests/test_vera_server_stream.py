@@ -10,7 +10,7 @@ from vera.core.vera_server import VeraServer
 
 
 class FakeManager:
-    """Manager falso: emite 2 eventos de progreso y devuelve éxito."""
+    """Fake manager: emits 2 progress events and returns success."""
 
     def __init__(self, blackboard, succeed=True):
         self.blackboard = blackboard
@@ -68,7 +68,7 @@ def test_stream_emits_progress_then_final(server_factory):
 
 def test_failed_command_final_is_error_status(server_factory):
     port = server_factory(succeed=False)
-    events = _send_and_read_events(port, "imposible")
+    events = _send_and_read_events(port, "impossible")
     assert events[-1]["type"] == "final"
     assert events[-1]["status"] == "error"
 
@@ -102,7 +102,7 @@ def test_manager_exception_yields_error_final():
     srv = VeraServer(port=0, blackboard=bb, manager=ExplodingManager())
     port = srv.start_in_thread()
     try:
-        events = _send_and_read_events(port, "explota")
+        events = _send_and_read_events(port, "explode")
         assert events[-1]["type"] == "final"
         assert events[-1]["status"] == "error"
         assert bb.progress_callback is None
@@ -130,17 +130,17 @@ def test_concurrent_second_command_gets_busy_final():
         results = {}
 
         def first():
-            results["a"] = _send_and_read_events(port, "lento")
+            results["a"] = _send_and_read_events(port, "slow")
 
         t = threading.Thread(target=first, daemon=True)
         t.start()
         deadline = time.time() + 5.0
         while not srv._busy.locked() and time.time() < deadline:
             time.sleep(0.02)
-        assert srv._busy.locked(), "el primer comando nunca tomó el lock"
-        results["b"] = _send_and_read_events(port, "segundo")
+        assert srv._busy.locked(), "the first command never took the lock"
+        results["b"] = _send_and_read_events(port, "second")
         assert results["b"][-1]["status"] == "error"
-        assert "ocupada" in results["b"][-1]["msg"]
+        assert "busy" in results["b"][-1]["msg"]
         mgr.release.set()
         t.join(timeout=10.0)
         assert results["a"][-1]["status"] == "success"

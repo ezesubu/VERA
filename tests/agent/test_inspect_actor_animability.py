@@ -7,11 +7,11 @@ import vera.agent.tools.inspect_actor_animability as mod
 from vera.tools.ue_conn import UEConnectionError
 
 
-def test_es_read_only():
+def test_is_read_only():
     assert InspectActorAnimabilityTool().destructive is False
 
 
-def test_skeletal_con_anims(monkeypatch):
+def test_skeletal_with_anims(monkeypatch):
     data = {"actor": "VERA_Manny", "kind": "skeletal", "skeleton": "SK_Mannequin",
             "compatible_anims": ["MM_Idle"], "total_compatible_anims": 1,
             "current_anim_mode": "AnimationMode.ANIMATION_BLUEPRINT", "notes": ""}
@@ -33,7 +33,7 @@ def test_skeletal_con_anims(monkeypatch):
     assert '"VERA_Manny"' in captured["script"]
 
 
-def test_ruido_de_log_antes_del_json(monkeypatch):
+def test_log_noise_before_the_json(monkeypatch):
     out = "LogTemp: warning x\n" + json.dumps(
         {"actor": "A", "kind": "static", "skeleton": None,
          "compatible_anims": [], "total_compatible_anims": 0,
@@ -45,43 +45,43 @@ def test_ruido_de_log_antes_del_json(monkeypatch):
     assert "static" in res.content
 
 
-def test_not_found_con_candidatos(monkeypatch):
+def test_not_found_with_candidates(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: {
         "success": True,
-        "output": json.dumps({"error": "not_found", "actor": "Raton",
+        "output": json.dumps({"error": "not_found", "actor": "Mouse",
                               "candidates": ["Altar", "Goal"]})})
-    res = InspectActorAnimabilityTool().execute({"actor_name": "Raton"}, ToolContext())
+    res = InspectActorAnimabilityTool().execute({"actor_name": "Mouse"}, ToolContext())
     assert res.is_error is True
     assert "Altar" in res.content and "Goal" in res.content
 
 
-def test_actor_name_vacio_no_llama_al_bridge(monkeypatch):
+def test_empty_actor_name_does_not_call_the_bridge(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     res = InspectActorAnimabilityTool().execute({"actor_name": "   "}, ToolContext())
     assert res.is_error is True
 
 
-def test_bridge_caido(monkeypatch):
+def test_bridge_down(monkeypatch):
     def boom(*a, **k):
-        raise UEConnectionError("editor cerrado")
+        raise UEConnectionError("editor closed")
     monkeypatch.setattr(mod, "send_json", boom)
     res = InspectActorAnimabilityTool().execute({"actor_name": "X"}, ToolContext())
     assert res.is_error is True
-    assert "editor cerrado" in res.content
+    assert "editor closed" in res.content
 
 
-def test_output_no_parseable(monkeypatch):
+def test_unparseable_output(monkeypatch):
     monkeypatch.setattr(mod, "send_json",
-                        lambda *a, **k: {"success": True, "output": "ruido sin json"})
+                        lambda *a, **k: {"success": True, "output": "noise without json"})
     res = InspectActorAnimabilityTool().execute({"actor_name": "X"}, ToolContext())
     assert res.is_error is True
 
 
-def test_error_del_editor(monkeypatch):
+def test_editor_error(monkeypatch):
     monkeypatch.setattr(mod, "send_json",
-                        lambda *a, **k: {"success": False, "error": "boom interno"})
+                        lambda *a, **k: {"success": False, "error": "internal boom"})
     res = InspectActorAnimabilityTool().execute({"actor_name": "X"}, ToolContext())
     assert res.is_error is True
-    assert "boom interno" in res.content
+    assert "internal boom" in res.content

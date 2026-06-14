@@ -17,8 +17,8 @@ def _setup_payload(tmp_path, **over):
 
 
 class FakeBridge:
-    """Simula el editor: discrimina setup/frame/restore por marcadores del
-    script, escribe el PNG cuando ve un frame y registra el orden."""
+    """Simulates the editor: discriminates setup/frame/restore by script
+    markers, writes the PNG when it sees a frame, and records the order."""
 
     def __init__(self, tmp_path, setup=None, frame_fail_at=None,
                  write_files=True, restore=None):
@@ -35,15 +35,15 @@ class FakeBridge:
         self.scripts.append(s)
         if "sys.modules.pop" in s:                      # restore
             return {"success": True, "output": json.dumps(self.restore)}
-        if "capture_scene" in s:                        # captura (2do round-trip)
+        if "capture_scene" in s:                        # capture (2nd round-trip)
             self.frame_count += 1
             if self.frame_fail_at == self.frame_count:
-                return {"success": False, "error": "boom en el frame"}
+                return {"success": False, "error": "boom in the frame"}
             m = re.search(r"vera_cap_[0-9a-f]+_\d+\.png", s)
             if self.write_files and m:
                 (self.tmp / m.group(0)).write_bytes(b"PNGDATA")
             return {"success": True, "output": json.dumps({"ok": True})}
-        if "set_position" in s:                         # pose (1er round-trip)
+        if "set_position" in s:                         # pose (1st round-trip)
             return {"success": True, "output": json.dumps({"ok": True})}
         return {"success": True, "output": json.dumps(self.setup)}   # setup
 
@@ -68,11 +68,11 @@ def _fast(monkeypatch):
     monkeypatch.setattr(mod, "POSE_SETTLE_S", 0.0)
 
 
-def test_es_read_only():
+def test_is_read_only():
     assert CaptureActorTool().destructive is False
 
 
-def test_orbit_feliz(monkeypatch, tmp_path):
+def test_orbit_happy(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path)
     monkeypatch.setattr(mod, "send_json", bridge)
@@ -89,7 +89,7 @@ def test_orbit_feliz(monkeypatch, tmp_path):
     assert len(images) == 2
 
 
-def test_anim_feliz_calcula_tiempos(monkeypatch, tmp_path):
+def test_anim_happy_computes_times(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path)
     monkeypatch.setattr(mod, "send_json", bridge)
@@ -98,24 +98,24 @@ def test_anim_feliz_calcula_tiempos(monkeypatch, tmp_path):
         ToolContext())
     assert res.is_error is False
     meta = json.loads(res.content[0]["text"])
-    assert meta["mode"] == "anim"                 # inferido por animation
+    assert meta["mode"] == "anim"                 # inferred from animation
     assert meta["times"] == [0.25, 0.75, 1.25, 1.75]
     assert meta["animation"] == "MM_Idle"
 
 
-def test_anim_length_cero_es_error(monkeypatch, tmp_path):
+def test_anim_length_zero_is_error(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path, setup=_setup_payload(tmp_path, anim_length=0.0))
     monkeypatch.setattr(mod, "send_json", bridge)
     res = CaptureActorTool().execute(
         {"actor_name": "X", "animation": "auto"}, ToolContext())
     assert res.is_error is True
-    assert bridge.kinds[-1] == "restore"          # el setup YA mutó: restore igual
+    assert bridge.kinds[-1] == "restore"          # setup ALREADY mutated: restore anyway
 
 
-def test_orbit_rechaza_animation(monkeypatch):
+def test_orbit_rejects_animation(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     res = CaptureActorTool().execute(
         {"actor_name": "X", "mode": "orbit", "animation": "MM_Idle"},
@@ -123,29 +123,29 @@ def test_orbit_rechaza_animation(monkeypatch):
     assert res.is_error is True
 
 
-def test_validaciones_sin_bridge(monkeypatch):
+def test_validations_without_bridge(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     t = CaptureActorTool()
     assert t.execute({"actor_name": "  "}, ToolContext()).is_error
     assert t.execute({"actor_name": "X", "frames": 0}, ToolContext()).is_error
     assert t.execute({"actor_name": "X", "frames": 7}, ToolContext()).is_error
-    assert t.execute({"actor_name": "X", "mode": "vuelta"}, ToolContext()).is_error
+    assert t.execute({"actor_name": "X", "mode": "spin"}, ToolContext()).is_error
 
 
-def test_not_found_no_muta_ni_restaura(monkeypatch, tmp_path):
-    bridge = FakeBridge(tmp_path, setup={"error": "not_found", "actor": "Nada",
+def test_not_found_does_not_mutate_or_restore(monkeypatch, tmp_path):
+    bridge = FakeBridge(tmp_path, setup={"error": "not_found", "actor": "Nothing",
                                          "candidates": ["Goal"]})
     monkeypatch.setattr(mod, "send_json", bridge)
-    res = CaptureActorTool().execute({"actor_name": "Nada"}, ToolContext())
+    res = CaptureActorTool().execute({"actor_name": "Nothing"}, ToolContext())
     assert res.is_error is True
-    assert bridge.kinds == ["setup"]              # sin frames y SIN restore
+    assert bridge.kinds == ["setup"]              # no frames and NO restore
 
 
-def test_not_skeletal_es_error_claro(monkeypatch, tmp_path):
+def test_not_skeletal_is_a_clear_error(monkeypatch, tmp_path):
     bridge = FakeBridge(tmp_path, setup={"error": "not_skeletal",
-                                         "kind": "static", "hint": "usar mode=orbit"})
+                                         "kind": "static", "hint": "use mode=orbit"})
     monkeypatch.setattr(mod, "send_json", bridge)
     res = CaptureActorTool().execute(
         {"actor_name": "CyberHead", "animation": "auto"}, ToolContext())
@@ -153,30 +153,30 @@ def test_not_skeletal_es_error_claro(monkeypatch, tmp_path):
     assert "orbit" in res.content
 
 
-def test_frame_falla_pero_restore_viaja(monkeypatch, tmp_path):
+def test_frame_fails_but_restore_travels(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path, frame_fail_at=1)
     monkeypatch.setattr(mod, "send_json", bridge)
     res = CaptureActorTool().execute(
         {"actor_name": "X", "frames": 3}, ToolContext())
-    assert res.is_error is True                   # 0 imágenes
-    assert bridge.kinds[-1] == "restore"          # el finally lo mandó igual
+    assert res.is_error is True                   # 0 images
+    assert bridge.kinds[-1] == "restore"          # the finally sent it anyway
 
 
-def test_parcial_devuelve_lo_capturado_con_warning(monkeypatch, tmp_path):
+def test_partial_returns_what_was_captured_with_warning(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path, frame_fail_at=2)
     monkeypatch.setattr(mod, "send_json", bridge)
     res = CaptureActorTool().execute(
         {"actor_name": "X", "frames": 2}, ToolContext())
-    assert res.is_error is False                  # hay 1 frame útil
+    assert res.is_error is False                  # there is 1 useful frame
     meta = json.loads(res.content[0]["text"])
-    assert meta["frames_capturados"] == 1
+    assert meta["frames_captured"] == 1
     assert meta["warnings"]
     assert meta["restored"] is True
 
 
-def test_timeout_de_png_restaura_y_falla(monkeypatch, tmp_path):
+def test_png_timeout_restores_and_fails(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path, write_files=False)
     monkeypatch.setattr(mod, "send_json", bridge)
@@ -186,23 +186,23 @@ def test_timeout_de_png_restaura_y_falla(monkeypatch, tmp_path):
     assert bridge.kinds[-1] == "restore"
 
 
-def test_restore_fallido_se_reporta(monkeypatch, tmp_path):
+def test_failed_restore_is_reported(monkeypatch, tmp_path):
     _fast(monkeypatch)
     bridge = FakeBridge(tmp_path, restore={"restored": False,
                                            "unhidden": 1, "errors": ["x"]})
     monkeypatch.setattr(mod, "send_json", bridge)
     res = CaptureActorTool().execute(
         {"actor_name": "X", "frames": 1}, ToolContext())
-    assert res.is_error is False                  # las capturas sirven igual
+    assert res.is_error is False                  # the captures are still useful
     meta = json.loads(res.content[0]["text"])
     assert meta["restored"] is False
     assert "restore_detail" in meta
 
 
-def test_bridge_caido_en_setup(monkeypatch):
+def test_bridge_down_in_setup(monkeypatch):
     def boom(*a, **k):
-        raise UEConnectionError("editor cerrado")
+        raise UEConnectionError("editor closed")
     monkeypatch.setattr(mod, "send_json", boom)
     res = CaptureActorTool().execute({"actor_name": "X"}, ToolContext())
     assert res.is_error is True
-    assert "editor cerrado" in res.content
+    assert "editor closed" in res.content

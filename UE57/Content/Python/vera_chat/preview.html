@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VERA · Obsidian Instrument Deck (preview)</title>
-<!-- PREVIEW ONLY: usa Google Fonts. En producción (Qt/CSP) se self-hostean. -->
+<!-- PREVIEW ONLY: uses Google Fonts. In production (Qt/CSP) they're self-hosted. -->
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
@@ -29,7 +29,7 @@ body{
   display:flex; align-items:center; justify-content:center; min-height:100%;
   padding:24px; overflow:hidden;
 }
-/* viñeta + grano de toda la escena */
+/* vignette + grain over the whole scene */
 body::after{
   content:""; position:fixed; inset:0; pointer-events:none; z-index:99;
   background:radial-gradient(130% 100% at 50% 0%, transparent 60%, rgba(0,0,0,.55) 100%);
@@ -39,7 +39,7 @@ body::after{
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 
-/* ===== el panel acoplado (≈460px como en Unreal) ===== */
+/* ===== the docked panel (≈460px as in Unreal) ===== */
 #deck{
   width:460px; height:760px; max-height:calc(100vh - 48px);
   background:linear-gradient(180deg, var(--panel), #0c0e11);
@@ -51,14 +51,14 @@ body::after{
   animation:deck-in .7s cubic-bezier(.2,.8,.2,1) both;
 }
 @keyframes deck-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
-/* filo ámbar superior */
+/* amber top edge */
 #deck::before{
   content:""; position:absolute; top:0; left:0; right:0; height:2px; z-index:5;
   background:linear-gradient(90deg, transparent, var(--amber-deep), var(--amber), var(--amber-deep), transparent);
   opacity:.7;
 }
 
-/* ===== header instrumento ===== */
+/* ===== instrument header ===== */
 #hd{padding:14px 16px 12px; border-bottom:1px solid var(--line-soft); position:relative}
 .hd-top{display:flex; align-items:center; justify-content:space-between}
 .brand{display:flex; align-items:baseline; gap:9px}
@@ -73,7 +73,7 @@ body::after{
 .led.off{color:var(--ink-faint)} .led.off .dot{background:var(--ink-faint);animation:none;box-shadow:none}
 @keyframes ping{0%{box-shadow:0 0 0 0 rgba(45,212,191,.5)}70%{box-shadow:0 0 0 7px rgba(45,212,191,0)}100%{box-shadow:0 0 0 0 rgba(45,212,191,0)}}
 
-/* tira-lectura del cerebro */
+/* brain readout strip */
 .readout{
   margin-top:12px; display:flex; align-items:center; gap:10px;
   background:linear-gradient(180deg,var(--raised),#0e1014);
@@ -100,7 +100,7 @@ body::after{
 .readout .ro-model em{color:var(--teal); font-style:normal}
 .readout .caret{color:var(--ink-faint); font-size:11px; flex:none}
 
-/* fila de controles: modos + setup */
+/* controls row: modes + setup */
 .ctl{margin-top:10px; display:flex; align-items:center; gap:8px}
 .seg{display:flex; background:#0d0f12; border:1px solid var(--line); border-radius:9px; padding:2px; flex:1}
 .seg button{
@@ -136,7 +136,7 @@ body::after{
 .vera .who .av{width:18px;height:18px;border-radius:5px;background:radial-gradient(circle at 30% 25%,#2a1b06,#120c04);border:1px solid #3a2a10;color:var(--amber);font-size:10px;display:grid;place-items:center}
 .vera .who span{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--ink-faint)}
 
-/* timeline de razonamiento / tools */
+/* reasoning / tools timeline */
 .tl{border-left:1px solid var(--line); margin-left:8px; padding-left:14px; display:flex; flex-direction:column; gap:9px}
 .tl-item{position:relative; font-size:12px; color:var(--ink-dim); line-height:1.5}
 .tl-item::before{content:"";position:absolute;left:-19px;top:5px;width:7px;height:7px;border-radius:50%;background:#2a2e35;border:1px solid var(--line)}
@@ -150,7 +150,7 @@ body::after{
 .tl-item.done::before{background:var(--ok);border-color:#1f6b4a}
 .tl-item .res{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px}
 
-/* gate destructivo */
+/* destructive gate */
 .gate{margin-top:6px;background:#1a140a;border:1px solid #3a2a10;border-left:3px solid var(--amber);border-radius:9px;padding:11px}
 .gate .g-h{font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
 .gate .g-cmd{font-family:var(--mono);font-size:11px;color:var(--ink-dim);background:#0c0e11;border:1px solid var(--line);border-radius:6px;padding:7px;max-height:90px;overflow:auto;white-space:pre-wrap}
@@ -190,7 +190,7 @@ body::after{
 .hint{margin-top:8px;font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--ink-faint);display:flex;justify-content:space-between}
 .hint b{color:var(--ink-dim)}
 
-/* ===== popover selector de modelo ===== */
+/* ===== model selector popover ===== */
 .pop{
   position:absolute; left:14px; right:14px; top:128px; z-index:30;
   background:linear-gradient(180deg,var(--raised-2),#0e1014);
@@ -254,7 +254,7 @@ body::after{
 .tip{font-family:var(--sans);font-size:11px;color:var(--ink-faint);margin-top:8px;line-height:1.5}
 .tip code{font-family:var(--mono);color:var(--amber)}
 
-/* botón replay del demo */
+/* demo replay button */
 #replay{position:absolute;bottom:88px;right:18px;z-index:20;font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-faint);background:#15181d;border:1px solid var(--line);border-radius:20px;padding:6px 13px;cursor:pointer;transition:.15s}
 #replay:hover{color:var(--amber);border-color:var(--amber-deep)}
 </style>
@@ -291,11 +291,11 @@ body::after{
       <button class="icon-btn" id="gear" title="Setup">⚙</button>
     </div>
 
-    <!-- popover selector de modelo -->
+    <!-- model selector popover -->
     <div class="pop" id="pop">
       <div class="search">
         <span style="color:var(--ink-faint)">⌕</span>
-        <input placeholder="Buscar proveedor o modelo…" id="pop-q">
+        <input placeholder="Search provider or model…" id="pop-q">
         <span class="k">esc</span>
       </div>
       <div class="list" id="pop-list"></div>
@@ -309,13 +309,13 @@ body::after{
   <!-- input -->
   <div id="bar">
     <div class="bar-row">
-      <button class="ghost plan" id="plan" title="Planear esta vez (solo lectura)">◎</button>
-      <textarea id="input" rows="1" placeholder="Decile a VERA qué construir…"></textarea>
-      <button class="send" id="send" title="Enviar">➤</button>
+      <button class="ghost plan" id="plan" title="Plan this turn (read-only)">◎</button>
+      <textarea id="input" rows="1" placeholder="Tell VERA what to build…"></textarea>
+      <button class="send" id="send" title="Send">➤</button>
     </div>
     <div class="hint">
-      <span id="mode-hint"><b>Ask</b> · pide permiso en acciones destructivas</span>
-      <span>⏎ enviar</span>
+      <span id="mode-hint"><b>Ask</b> · asks permission for destructive actions</span>
+      <span>⏎ send</span>
     </div>
   </div>
 
@@ -324,50 +324,50 @@ body::after{
   <aside class="setup" id="setup">
     <div class="s-hd"><h2>Setup</h2><button class="x" id="setup-x">✕</button></div>
     <div class="s-body">
-      <div class="intro">Conectá un cerebro. VERA corre tu LLM <b>local</b> (LM Studio) gratis y offline, o un modelo cloud cuando quieras potencia. Las keys se guardan en tu <code>.env</code> y nunca vuelven al frontend.</div>
+      <div class="intro">Connect a brain. VERA runs your <b>local</b> LLM (LM Studio) for free and offline, or a cloud model when you want more power. Keys are saved to your <code>.env</code> and never sent back to the frontend.</div>
 
       <!-- LM Studio -->
       <div class="card">
         <div class="c-hd">
           <div class="c-ico" style="background:#06211d;border:1px solid var(--teal-dim);color:var(--teal)">◇</div>
-          <div class="c-name"><div class="t">LM Studio · Local</div><div class="st live">● 2 modelos detectados</div></div>
+          <div class="c-name"><div class="t">LM Studio · Local</div><div class="st live">● 2 models detected</div></div>
         </div>
         <div class="field">
           <input value="http://172.21.80.1:1233" id="lm-url">
-          <button id="lm-detect">Detectar</button>
+          <button id="lm-detect">Detect</button>
         </div>
         <div class="detected" id="lm-list">
           <div class="d"><span class="s"></span>qwen2.5-coder-32b-instruct</div>
           <div class="d"><span class="s"></span>llama-3.3-70b-instruct</div>
         </div>
-        <div class="tip">Para tool-calling sólido usá <code>Qwen2.5-Coder-32B</code> o <code>Llama-3.3-70B</code>. Cargá uno en LM Studio (hoy: <code>No model selected</code>).</div>
+        <div class="tip">For solid tool-calling use <code>Qwen2.5-Coder-32B</code> or <code>Llama-3.3-70B</code>. Load one in LM Studio (currently: <code>No model selected</code>).</div>
       </div>
 
       <!-- Anthropic -->
       <div class="card">
         <div class="c-hd">
           <div class="c-ico" style="background:#2a1607;border:1px solid #5a3410;color:#ff9d5c">A</div>
-          <div class="c-name"><div class="t">Anthropic</div><div class="st no" id="st-anthropic">○ no configurado</div></div>
+          <div class="c-name"><div class="t">Anthropic</div><div class="st no" id="st-anthropic">○ not configured</div></div>
         </div>
-        <div class="field"><input type="password" placeholder="sk-ant-…" id="k-anthropic"><button data-p="anthropic" class="test">Probar</button></div>
+        <div class="field"><input type="password" placeholder="sk-ant-…" id="k-anthropic"><button data-p="anthropic" class="test">Test</button></div>
       </div>
 
       <!-- OpenAI -->
       <div class="card">
         <div class="c-hd">
           <div class="c-ico" style="background:#0a2018;border:1px solid #14533b;color:#5fe0a8">O</div>
-          <div class="c-name"><div class="t">OpenAI</div><div class="st no" id="st-openai">○ no configurado</div></div>
+          <div class="c-name"><div class="t">OpenAI</div><div class="st no" id="st-openai">○ not configured</div></div>
         </div>
-        <div class="field"><input type="password" placeholder="sk-…" id="k-openai"><button data-p="openai" class="test">Probar</button></div>
+        <div class="field"><input type="password" placeholder="sk-…" id="k-openai"><button data-p="openai" class="test">Test</button></div>
       </div>
 
       <!-- Gemini -->
       <div class="card">
         <div class="c-hd">
           <div class="c-ico" style="background:#101a2e;border:1px solid #1f3a66;color:#7ab0ff">G</div>
-          <div class="c-name"><div class="t">Gemini</div><div class="st no" id="st-gemini">○ no configurado</div></div>
+          <div class="c-name"><div class="t">Gemini</div><div class="st no" id="st-gemini">○ not configured</div></div>
         </div>
-        <div class="field"><input type="password" placeholder="AIza…" id="k-gemini"><button data-p="gemini" class="test">Probar</button></div>
+        <div class="field"><input type="password" placeholder="AIza…" id="k-gemini"><button data-p="gemini" class="test">Test</button></div>
       </div>
     </div>
   </aside>
@@ -379,7 +379,7 @@ const $ = (s,el=document)=>el.querySelector(s);
 const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
 const sleep = ms=>new Promise(r=>setTimeout(r,ms));
 
-/* ---------- estado ---------- */
+/* ---------- state ---------- */
 const STATE = { provider:"LOCAL", model:"qwen2.5-coder-32b-instruct", mode:"ask", planOnce:false };
 
 const MODELS = {
@@ -389,7 +389,7 @@ const MODELS = {
   GEMINI:   { label:"Gemini", status:"off", models:["gemini-2.0-flash","gemini-1.5-pro"] },
 };
 
-/* ---------- selector de modelo ---------- */
+/* ---------- model selector ---------- */
 const pop = $("#pop");
 function renderModels(filter=""){
   const list = $("#pop-list"); list.innerHTML="";
@@ -400,15 +400,15 @@ function renderModels(filter=""){
     const grp = document.createElement("div"); grp.className="grp";
     const dotCls = info.status==="local"?"local":info.status==="ok"?"on":"off";
     grp.innerHTML = `<span>${info.label}</span>` + (prov==="LOCAL"
-      ? `<span class="rescan" data-rescan>↻ re-escanear</span>`
-      : (info.status==="off"?`<span style="color:var(--ink-faint)">sin key</span>`:``));
+      ? `<span class="rescan" data-rescan>↻ rescan</span>`
+      : (info.status==="off"?`<span style="color:var(--ink-faint)">no key</span>`:``));
     list.appendChild(grp);
     for(const m of matches){
       const muted = info.status==="off";
       const sel = (prov===STATE.provider && m===STATE.model);
       const opt = document.createElement("div");
       opt.className = "opt"+(sel?" sel":"")+(muted?" muted":"");
-      opt.innerHTML = `<span class="s ${dotCls}"></span><span class="nm">${m}</span><span class="pick">${sel?"activo":"↵"}</span>`;
+      opt.innerHTML = `<span class="s ${dotCls}"></span><span class="nm">${m}</span><span class="pick">${sel?"active":"↵"}</span>`;
       opt.onclick = ()=>{ if(muted){openSetup();return;} selectModel(prov,m); };
       list.appendChild(opt);
     }
@@ -425,15 +425,15 @@ function openPop(){ renderModels(); pop.classList.add("open"); $("#pop-q").value
 function closePop(){ pop.classList.remove("open"); }
 $("#readout").onclick = ()=> pop.classList.contains("open")?closePop():openPop();
 $("#pop-q").oninput = e=>renderModels(e.target.value);
-$("#pop").onclick = e=>{ if(e.target.dataset.rescan!==undefined){ e.target.textContent="escaneando…"; setTimeout(()=>{e.target.textContent="↻ re-escanear";},900);} };
+$("#pop").onclick = e=>{ if(e.target.dataset.rescan!==undefined){ e.target.textContent="scanning…"; setTimeout(()=>{e.target.textContent="↻ rescan";},900);} };
 document.onkeydown = e=>{ if(e.key==="Escape"){closePop();closeSetup();} };
 document.addEventListener("click",e=>{ if(!pop.contains(e.target) && !$("#readout").contains(e.target)) closePop(); });
 
-/* ---------- modos ---------- */
+/* ---------- modes ---------- */
 const MODE_HINT = {
-  ask:"<b>Ask</b> · pide permiso en acciones destructivas",
-  auto:"<b>Auto</b> · ejecuta todo sin frenar",
-  readonly:"<b>Read</b> · solo inspecciona, no toca nada",
+  ask:"<b>Ask</b> · asks permission for destructive actions",
+  auto:"<b>Auto</b> · runs everything without stopping",
+  readonly:"<b>Read</b> · inspects only, touches nothing",
 };
 $("#seg").onclick = e=>{
   const b = e.target.closest("button"); if(!b) return;
@@ -442,17 +442,17 @@ $("#seg").onclick = e=>{
 };
 $("#plan").onclick = function(){
   STATE.planOnce = !STATE.planOnce; this.classList.toggle("armed",STATE.planOnce);
-  $("#mode-hint").innerHTML = STATE.planOnce ? "<b>Plan</b> · este turno es solo lectura" : MODE_HINT[STATE.mode];
+  $("#mode-hint").innerHTML = STATE.planOnce ? "<b>Plan</b> · this turn is read-only" : MODE_HINT[STATE.mode];
 };
 
 /* ---------- setup ---------- */
 function openSetup(){ closePop(); $("#scrim").classList.add("open"); $("#setup").classList.add("open"); }
 function closeSetup(){ $("#scrim").classList.remove("open"); $("#setup").classList.remove("open"); }
 $("#gear").onclick = openSetup; $("#setup-x").onclick = closeSetup; $("#scrim").onclick = closeSetup;
-$("#lm-detect").onclick = function(){ this.textContent="…"; setTimeout(()=>this.textContent="Detectar",800); };
+$("#lm-detect").onclick = function(){ this.textContent="…"; setTimeout(()=>this.textContent="Detect",800); };
 $$(".test").forEach(b=> b.onclick = ()=>{
   const p=b.dataset.p; const st=$("#st-"+p); b.textContent="…";
-  setTimeout(()=>{ b.textContent="OK"; st.className="st ok"; st.textContent="● configurado";
+  setTimeout(()=>{ b.textContent="OK"; st.className="st ok"; st.textContent="● configured";
     MODELS[p.toUpperCase()].status="ok"; },900);
 });
 
@@ -466,47 +466,47 @@ async function typeInto(node,text,sp=14){ for(const ch of text){ node.textConten
 async function demo(){
   chat.innerHTML="";
   // user
-  const u = add(el("msg row-user")); u.appendChild(el("user","Agregá un peligro de lava al laberinto del bosque y que dañe al jugador"));
+  const u = add(el("msg row-user")); u.appendChild(el("user","Add a lava hazard to the forest maze that damages the player"));
   await sleep(500);
 
   // vera turn
   const v = add(el("msg vera"));
-  v.appendChild(el("who",`<span class="av">◇</span><span>VERA · razonando</span>`));
+  v.appendChild(el("who",`<span class="av">◇</span><span>VERA · thinking</span>`));
   const tl = el("tl"); v.appendChild(tl);
   $("#readout").classList.add("thinking");
 
   const think = el("tl-item think live");
   tl.appendChild(think);
-  await typeInto(think,"Mapeo el nivel y ubico el piso del laberinto. Voy a crear un plano de lava con material emisivo y un volumen de daño encima.");
+  await typeInto(think,"I'll map the level and locate the maze floor. I'm going to create a lava plane with an emissive material and a damage volume on top.");
   think.classList.remove("live");
   await sleep(300);
 
-  const t1 = el("tl-item tool",`<span class="t-name">inspect_level</span> <span class="t-arg">filtro="floor"</span>`);
+  const t1 = el("tl-item tool",`<span class="t-name">inspect_level</span> <span class="t-arg">filter="floor"</span>`);
   tl.appendChild(t1); chat.scrollTop=chat.scrollHeight; await sleep(700);
   t1.classList.add("done"); t1.appendChild(el("res","→ 1 StaticMeshActor 'SM_MazeFloor' · bounds 4200×4200"));
   await sleep(450);
 
   const t2 = el("tl-item tool",`<span class="t-name">run_ue_python</span> <span class="t-arg">spawn lava plane + radial damage</span>`);
   tl.appendChild(t2); chat.scrollTop=chat.scrollHeight; await sleep(900);
-  t2.classList.add("done"); t2.appendChild(el("res","→ spawneado 'BP_LavaHazard' · DamageVolume 250 dps"));
+  t2.classList.add("done"); t2.appendChild(el("res","→ spawned 'BP_LavaHazard' · DamageVolume 250 dps"));
   await sleep(500);
 
-  // gate destructivo (modo Ask)
+  // destructive gate (Ask mode)
   const gate = el("gate");
-  gate.innerHTML = `<div class="g-h">⚠ acción destructiva · save_asset</div>
+  gate.innerHTML = `<div class="g-h">⚠ destructive action · save_asset</div>
     <div class="g-cmd">save_asset("/Game/VERA/BP_LavaHazard")\nsave_asset("/Game/Maps/ForestMaze")</div>
-    <div class="g-act"><button class="approve">Aprobar</button><button class="deny">Rechazar</button></div>`;
+    <div class="g-act"><button class="approve">Approve</button><button class="deny">Reject</button></div>`;
   tl.appendChild(gate); chat.scrollTop=chat.scrollHeight;
   $("#readout").classList.remove("thinking");
 
   await new Promise(res=>{
-    gate.querySelector(".approve").onclick=()=>{ gate.classList.add("resolved","ok"); gate.appendChild(el("verdict","✓ aprobado por el usuario")); res(); };
-    gate.querySelector(".deny").onclick =()=>{ gate.classList.add("resolved","no"); gate.appendChild(el("verdict","✕ rechazado")); res(); };
+    gate.querySelector(".approve").onclick=()=>{ gate.classList.add("resolved","ok"); gate.appendChild(el("verdict","✓ approved by the user")); res(); };
+    gate.querySelector(".deny").onclick =()=>{ gate.classList.add("resolved","no"); gate.appendChild(el("verdict","✕ rejected")); res(); };
   });
   await sleep(450);
 
   v.querySelector(".who span").textContent = "VERA";
-  const fin = el("final",`Listo. Agregué <code>BP_LavaHazard</code> en el centro del laberinto: un plano de lava con material emisivo y un <code>RadialDamage</code> de 250 dps que daña al jugador al contacto. Guardé el blueprint y el mapa. ¿Querés que le sume partículas de chispas Niagara?`);
+  const fin = el("final",`Done. I added <code>BP_LavaHazard</code> at the center of the maze: a lava plane with an emissive material and a <code>RadialDamage</code> of 250 dps that damages the player on contact. I saved the blueprint and the map. Want me to add Niagara spark particles?`);
   v.appendChild(fin); chat.scrollTop=chat.scrollHeight;
 }
 $("#replay").onclick = demo;

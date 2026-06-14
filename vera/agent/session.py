@@ -1,8 +1,8 @@
-"""AgentSession: conversación persistente del cerebro de VERA.
+"""AgentSession: persistent conversation for VERA's brain.
 
-El historial sobrevive entre comandos ("creá un cubo" → "hacelo rojo" funciona).
-Reactivo (chat) y proactivo (watchers, Fase 3) inyectan turnos al MISMO historial
-vía run() / inject().
+History survives across commands ("create a cube" → "make it red" works).
+Reactive (chat) and proactive (watchers, Phase 3) inject turns into the SAME
+history via run() / inject().
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-MAX_HISTORY_MESSAGES = 40  # el truncado de contexto fino llega con compaction (Fase 4)
+MAX_HISTORY_MESSAGES = 40  # fine-grained context trimming arrives with compaction (Phase 4)
 
 
 class AgentSession:
@@ -27,16 +27,22 @@ class AgentSession:
         emit: Optional[Callable[[dict], None]] = None,
         confirm: Optional[Callable] = None,
         include_destructive: bool = True,
+        should_stop: Optional[Callable[[], bool]] = None,
+        image: Optional[dict] = None,
     ) -> dict:
-        """Ejecuta un comando dentro de la sesión (muta `self.messages`).
-        `confirm`: override del gate destructivo para esta llamada puntual
-        (p.ej. el round-trip al socket de la conexión en curso).
-        `include_destructive`: False = modo readonly (esconde tools destructivas)."""
+        """Run a command inside the session (mutates `self.messages`).
+        `confirm`: override of the destructive gate for this one call
+        (e.g. the round-trip to the socket over the live connection).
+        `include_destructive`: False = readonly mode (hides destructive tools).
+        `should_stop`: cooperative cancellation callback forwarded to the loop.
+        `image`: optional attached image forwarded to the loop so the model
+        sees it in this turn."""
         with self._lock:
             self._trim()
             return self.loop.run(
                 command, emit=emit, messages=self.messages, confirm=confirm,
-                include_destructive=include_destructive,
+                include_destructive=include_destructive, should_stop=should_stop,
+                image=image,
             )
 
     def inject(
@@ -45,13 +51,13 @@ class AgentSession:
         emit: Optional[Callable[[dict], None]] = None,
         confirm: Optional[Callable] = None,
     ) -> dict:
-        """Turno proactivo (LogWatcher/FPSWatcher en Fase 3): mismo loop, otra fuente."""
+        """Proactive turn (LogWatcher/FPSWatcher in Phase 3): same loop, different source."""
         return self.run(content, emit=emit, confirm=confirm)
 
     def _trim(self) -> None:
-        """Mantiene el historial acotado. Después de podar, el historial debe
-        arrancar SIEMPRE en un turno user de texto plano: cortar en medio de un
-        par tool_use/tool_result es un 400 de la API."""
+        """Keeps the history bounded. After pruning, the history must ALWAYS
+        start on a plain-text user turn: cutting in the middle of a
+        tool_use/tool_result pair is a 400 from the API."""
         if len(self.messages) <= MAX_HISTORY_MESSAGES:
             return
         del self.messages[: len(self.messages) - MAX_HISTORY_MESSAGES]
@@ -62,4 +68,4 @@ class AgentSession:
             self.messages.pop(0)
         if not self.messages:
             logger.warning(
-                "[AgentSession] _trim vació el historial: no quedó ningún turno user de texto plano")
+                "[AgentSession] _trim emptied the history: no plain-text user turn remained")

@@ -1,7 +1,7 @@
-"""Fake del SDK de OpenAI: duck-typea chat.completions.create.
+"""Fake of the OpenAI SDK: duck-types chat.completions.create.
 
-Permite scriptar respuestas y capturar lo que se le pasó (model, messages,
-tools, tool_choice) para verificar la traducción de salida.
+Lets you script responses and capture what was passed to it (model, messages,
+tools, tool_choice) to verify the output translation.
 """
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from types import SimpleNamespace
 
 
 def _msg(content=None, tool_calls=None):
-    """Construye un choices[0].message como el SDK de OpenAI."""
+    """Builds a choices[0].message like the OpenAI SDK."""
     return SimpleNamespace(content=content, tool_calls=tool_calls)
 
 
 def text_response(text):
-    """Respuesta sin tool_calls (turno de texto)."""
+    """Response without tool_calls (text turn)."""
     return SimpleNamespace(choices=[SimpleNamespace(message=_msg(content=text))])
 
 
 def tool_call(id, name, arguments):
-    """Un tool_call como el del SDK (function.name / function.arguments str)."""
+    """A tool_call like the SDK's (function.name / function.arguments str)."""
     return SimpleNamespace(
         id=id,
         type="function",
@@ -28,7 +28,7 @@ def tool_call(id, name, arguments):
 
 
 def tool_response(tool_calls, text=None):
-    """Respuesta con uno o más tool_calls (turno tool_use)."""
+    """Response with one or more tool_calls (tool_use turn)."""
     return SimpleNamespace(
         choices=[SimpleNamespace(message=_msg(content=text, tool_calls=list(tool_calls)))]
     )
@@ -45,7 +45,7 @@ class _FakeCompletions:
 
 
 class FakeOpenAI:
-    """Imita openai.OpenAI: expone .chat.completions.create."""
+    """Mimics openai.OpenAI: exposes .chat.completions.create."""
 
     def __init__(self, scripted):
         self.chat = SimpleNamespace(completions=_FakeCompletions(scripted))

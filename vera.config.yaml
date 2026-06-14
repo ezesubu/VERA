@@ -17,3 +17,10 @@ cache:
 ue_bridge:
   port: 9877                       # TCP port for UE Python bridge
   timeout: 10                      # Seconds to wait for UE response
+
+monetization:
+  buy_me_a_coffee: "https://buymeacoffee.com/maveraick"
+  kofi: "https://ko-fi.com/maveraick"
+
+community:
+  discord: "https://discord.gg/ZxG8wbRp"

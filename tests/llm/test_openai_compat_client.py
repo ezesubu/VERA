@@ -1,4 +1,4 @@
-"""Tests del adaptador OpenAI→Anthropic (traducción en ambos sentidos)."""
+"""Tests for the OpenAI->Anthropic adapter (translation in both directions)."""
 import json
 
 from tests.llm.fake_openai import FakeOpenAI, text_response, tool_response, tool_call
@@ -10,16 +10,16 @@ def _client(scripted):
     return OpenAICompatClient("http://x/v1", "key", "m", client=fake), fake
 
 
-# ---------- ENTRADA: respuesta OpenAI → bloques Anthropic ----------
+# ---------- INPUT: OpenAI response -> Anthropic blocks ----------
 
 def test_text_response_maps_to_end_turn():
-    client, _ = _client([text_response("hola mundo")])
+    client, _ = _client([text_response("hello world")])
     with client.messages.stream(model="m", messages=[{"role": "user", "content": "hi"}]) as s:
         resp = s.get_final_message()
     assert resp.stop_reason == "end_turn"
     assert len(resp.content) == 1
     assert resp.content[0].type == "text"
-    assert resp.content[0].text == "hola mundo"
+    assert resp.content[0].text == "hello world"
 
 
 def test_tool_calls_map_to_tool_use_blocks():
@@ -53,12 +53,12 @@ def test_multiple_tool_calls_in_one_turn():
 
 def test_text_plus_tool_call_includes_text_block():
     client, _ = _client([
-        tool_response([tool_call("c1", "echo", "{}")], text="voy a usar echo")
+        tool_response([tool_call("c1", "echo", "{}")], text="I'm going to use echo")
     ])
     with client.messages.stream(model="m", messages=[]) as s:
         resp = s.get_final_message()
     assert resp.content[0].type == "text"
-    assert resp.content[0].text == "voy a usar echo"
+    assert resp.content[0].text == "I'm going to use echo"
     assert resp.content[1].type == "tool_use"
 
 
@@ -70,14 +70,14 @@ def test_empty_arguments_become_empty_dict():
 
 
 def test_response_blocks_are_reintrospectable_as_anthropic_history():
-    """El loop re-mete resp.content en messages → debe re-traducirse sin error."""
+    """The loop feeds resp.content back into messages -> must re-translate without error."""
     client, fake = _client([
         tool_response([tool_call("c1", "echo", '{"x": 1}')]),
-        text_response("listo"),
+        text_response("done"),
     ])
     with client.messages.stream(model="m", messages=[]) as s:
         resp = s.get_final_message()
-    # simular lo que hace el loop: appendea los OBJETOS bloque
+    # simulate what the loop does: append the block OBJECTS
     history = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": resp.content},
@@ -96,7 +96,7 @@ def test_response_blocks_are_reintrospectable_as_anthropic_history():
     assert tool_msg["content"] == "ok"
 
 
-# ---------- SALIDA: tools/mensajes/system Anthropic → OpenAI ----------
+# ---------- OUTPUT: Anthropic tools/messages/system -> OpenAI ----------
 
 def test_tools_translated_to_openai_function_schema():
     client, fake = _client([text_response("ok")])
@@ -113,11 +113,11 @@ def test_tools_translated_to_openai_function_schema():
 
 def test_system_becomes_first_system_message():
     client, fake = _client([text_response("ok")])
-    with client.messages.stream(model="m", system="sos VERA",
+    with client.messages.stream(model="m", system="you are VERA",
                                 messages=[{"role": "user", "content": "hi"}]) as s:
         s.get_final_message()
     sent = fake.calls[0]["messages"]
-    assert sent[0] == {"role": "system", "content": "sos VERA"}
+    assert sent[0] == {"role": "system", "content": "you are VERA"}
     assert sent[1] == {"role": "user", "content": "hi"}
 
 
@@ -173,19 +173,67 @@ def test_multiple_tool_results_become_separate_tool_messages():
 
 
 def test_tool_result_with_block_list_content_is_stringified():
-    """Algunas tools devuelven content como lista de bloques (texto+imagen)."""
+    """Some tools return content as a list of blocks (text+image)."""
     client, fake = _client([text_response("ok")])
     history = [
         {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "c1",
-             "content": [{"type": "text", "text": "hola"}], "is_error": False},
+             "content": [{"type": "text", "text": "hi"}], "is_error": False},
         ]},
     ]
     with client.messages.stream(model="m", messages=history) as s:
         s.get_final_message()
     tool_msg = [m for m in fake.calls[0]["messages"] if m["role"] == "tool"][0]
     assert isinstance(tool_msg["content"], str)
-    assert "hola" in tool_msg["content"]
+    assert "hi" in tool_msg["content"]
+
+
+def test_user_text_plus_image_block_translates_to_multimodal():
+    """A user turn with text+image blocks (Anthropic shape) -> multimodal OpenAI
+    user: one text part and one image_url part with a base64 data URL."""
+    client, fake = _client([text_response("ok")])
+    history = [
+        {"role": "user", "content": [
+            {"type": "text", "text": "describe this"},
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/png", "data": "QUJD"}},
+        ]},
+    ]
+    with client.messages.stream(model="m", messages=history) as s:
+        s.get_final_message()
+    sent = fake.calls[0]["messages"]
+    user = [m for m in sent if m["role"] == "user"][0]
+    assert isinstance(user["content"], list)
+    text_parts = [p for p in user["content"] if p["type"] == "text"]
+    img_parts = [p for p in user["content"] if p["type"] == "image_url"]
+    assert text_parts[0]["text"] == "describe this"
+    assert img_parts[0]["image_url"]["url"] == "data:image/png;base64,QUJD"
+
+
+def test_user_image_jpeg_data_url():
+    client, fake = _client([text_response("ok")])
+    history = [
+        {"role": "user", "content": [
+            {"type": "text", "text": "look"},
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/jpeg", "data": "Zm9v"}},
+        ]},
+    ]
+    with client.messages.stream(model="m", messages=history) as s:
+        s.get_final_message()
+    user = [m for m in fake.calls[0]["messages"] if m["role"] == "user"][0]
+    img = [p for p in user["content"] if p["type"] == "image_url"][0]
+    assert img["image_url"]["url"] == "data:image/jpeg;base64,Zm9v"
+
+
+def test_plain_string_user_still_translates_as_before():
+    """Regression: a plain-text user still translates to a string."""
+    client, fake = _client([text_response("ok")])
+    with client.messages.stream(
+            model="m", messages=[{"role": "user", "content": "hi"}]) as s:
+        s.get_final_message()
+    sent = fake.calls[0]["messages"]
+    assert sent[0] == {"role": "user", "content": "hi"}
 
 
 def test_model_is_forwarded():
@@ -199,7 +247,7 @@ def test_thinking_kwarg_is_accepted_and_ignored():
     client, fake = _client([text_response("ok")])
     with client.messages.stream(model="m", max_tokens=16000,
                                 thinking={"type": "adaptive"}, messages=[]) as s:
-        list(s)  # iterar no debe romper aunque no haya eventos
+        list(s)  # iterating must not break even when there are no events
         resp = s.get_final_message()
     assert resp.stop_reason == "end_turn"
     assert "thinking" not in fake.calls[0]

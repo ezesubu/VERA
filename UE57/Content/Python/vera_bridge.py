@@ -1,11 +1,11 @@
-"""VERA Bridge — corre DENTRO del editor de Unreal (auto-arranca vía init_unreal.py).
+"""VERA Bridge — runs INSIDE the Unreal editor (auto-starts via init_unreal.py).
 
-Escucha en 127.0.0.1:9878. Recibe {"script": "..."} (JSON + newline) y ejecuta
-el script en el MAIN THREAD del editor vía slate tick callback — tocar la API
-de `unreal` desde un hilo de red crashea el editor. Responde JSON + newline:
+Listens on 127.0.0.1:9878. Receives {"script": "..."} (JSON + newline) and runs
+the script on the editor's MAIN THREAD via a slate tick callback — touching the
+`unreal` API from a network thread crashes the editor. Replies JSON + newline:
 {"success": bool, "output": str, "error"?: str}.
 
-Solo stdlib. Corre en el Python embebido de Unreal.
+Stdlib only. Runs in Unreal's embedded Python.
 """
 import json
 import os
@@ -20,27 +20,27 @@ import unreal
 HOST = "127.0.0.1"
 PORT = 9878
 
-# El timeout server-side debe ser MAYOR que el del cliente (ue_conn default 60s):
-# en scripts lentos normales el cliente corta primero; esto solo atrapa stalls
-# reales del tick (diálogos modales, cargas largas).
+# The server-side timeout must be LONGER than the client's (ue_conn default 60s):
+# for normal slow scripts the client times out first; this only catches real
+# tick stalls (modal dialogs, long loads).
 MAIN_THREAD_TIMEOUT = 120.0
 
-# Cola de (task_id, script) hacia el main thread; resultados por task_id
+# Queue of (task_id, script) toward the main thread; results keyed by task_id
 _task_queue = queue.Queue()
 _results = {}
 _result_events = {}
 
 
 def _execute_on_main_thread(task_id, script):
-    """Corre en el main thread (llamado desde el slate tick)."""
+    """Runs on the main thread (called from the slate tick)."""
     output_lines = []
     import builtins
 
     original_print = builtins.print
 
-    # Parchear builtins.print es seguro SOLO porque el tick drena UN task por
-    # vez y corre sincrónico en el main thread: nunca hay dos ejecuciones
-    # solapadas que pisen original_print.
+    # Patching builtins.print is safe ONLY because the tick drains ONE task at a
+    # time and runs synchronously on the main thread: there are never two
+    # overlapping executions that would clobber original_print.
     def capture_print(*args, **kwargs):
         line = " ".join(str(a) for a in args)
         output_lines.append(line)
@@ -62,14 +62,14 @@ def _execute_on_main_thread(task_id, script):
 
     event = _result_events.get(task_id)
     if event is not None:
-        # Solo publicar si alguien sigue esperando: un task que terminó después
-        # del timeout del handler no debe dejar resultados huérfanos.
+        # Only publish if someone is still waiting: a task that finished after
+        # the handler's timeout must not leave orphaned results behind.
         _results[task_id] = result
         event.set()
 
 
 def slate_tick_callback(delta_time):
-    """Registrado en el slate post-tick: drena la cola en el main thread."""
+    """Registered on the slate post-tick: drains the queue on the main thread."""
     try:
         task_id, script = _task_queue.get_nowait()
     except queue.Empty:
@@ -101,11 +101,11 @@ def _handle_client(conn, addr):
             result = {
                 "success": None,
                 "output": "",
-                "error": "El editor no procesó el script en %.0fs "
-                         "(¿diálogo modal abierto o carga larga?)." % MAIN_THREAD_TIMEOUT,
+                "error": "The editor did not process the script in %.0fs "
+                         "(modal dialog open or long load?)." % MAIN_THREAD_TIMEOUT,
             }
         if result is None:
-            result = {"success": False, "output": "", "error": "resultado perdido"}
+            result = {"success": False, "output": "", "error": "result lost"}
 
         conn.sendall((json.dumps(result) + "\n").encode("utf-8"))
     except Exception as e:
@@ -124,14 +124,14 @@ def _serve(server):
 
 
 def start(port=PORT):
-    """Arranca el server en un hilo daemon. Devuelve el puerto real (útil con port=0)."""
+    """Starts the server on a daemon thread. Returns the real port (useful with port=0)."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, port))
     server.listen(5)
     actual_port = server.getsockname()[1]
     threading.Thread(target=_serve, args=(server,), daemon=True).start()
-    unreal.log("VERA Bridge escuchando en %s:%s (main-thread safe)" % (HOST, actual_port))
+    unreal.log("VERA Bridge listening on %s:%s (main-thread safe)" % (HOST, actual_port))
     return actual_port
 
 

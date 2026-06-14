@@ -1,1 +1,1 @@
-"""Herramientas auto-descubiertas del cerebro de VERA."""
+"""Auto-discovered tools for VERA's brain."""

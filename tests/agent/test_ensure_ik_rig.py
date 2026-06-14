@@ -11,11 +11,11 @@ def _ok(payload):
     return {"success": True, "output": json.dumps(payload)}
 
 
-def test_es_destructiva():
+def test_is_destructive():
     assert EnsureIKRigTool().destructive is True
 
 
-def test_encontrado_existente(monkeypatch):
+def test_found_existing(monkeypatch):
     captured = {}
 
     def fake_send(port, payload, *a, **k):
@@ -31,7 +31,7 @@ def test_encontrado_existente(monkeypatch):
     assert '"UE4Guy"' in captured["script"]
 
 
-def test_creado_nuevo(monkeypatch):
+def test_created_new(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
         {"rig_path": "/Game/X/IK_VERA_SK_Y", "skeleton": "SK_Y",
          "chains": ["Spine"], "retarget_root": "pelvis", "created": True}))
@@ -40,19 +40,19 @@ def test_creado_nuevo(monkeypatch):
     assert '"created": true' in res.content
 
 
-def test_no_caracterizable_es_error(monkeypatch):
+def test_not_characterizable_is_error(monkeypatch):
     monkeypatch.setattr(mod, "send_json", lambda *a, **k: _ok(
         {"error": "not_characterizable", "skeleton": "SK_SteampunkCar02",
-         "detail": "no parece humanoide"}))
+         "detail": "does not look humanoid"}))
     res = EnsureIKRigTool().execute(
         {"skeleton_path": "/Game/S/SK_SteampunkCar02"}, ToolContext())
     assert res.is_error is True
     assert "not_characterizable" in res.content
 
 
-def test_requiere_exactamente_una_ref(monkeypatch):
+def test_requires_exactly_one_ref(monkeypatch):
     def boom(*a, **k):
-        raise AssertionError("no debe llamar al bridge")
+        raise AssertionError("must not call the bridge")
     monkeypatch.setattr(mod, "send_json", boom)
     t = EnsureIKRigTool()
     assert t.execute({}, ToolContext()).is_error
@@ -60,10 +60,10 @@ def test_requiere_exactamente_una_ref(monkeypatch):
                      ToolContext()).is_error
 
 
-def test_bridge_caido(monkeypatch):
+def test_bridge_down(monkeypatch):
     def boom(*a, **k):
-        raise UEConnectionError("editor cerrado")
+        raise UEConnectionError("editor closed")
     monkeypatch.setattr(mod, "send_json", boom)
     res = EnsureIKRigTool().execute({"actor_name": "X"}, ToolContext())
     assert res.is_error is True
-    assert "editor cerrado" in res.content
+    assert "editor closed" in res.content

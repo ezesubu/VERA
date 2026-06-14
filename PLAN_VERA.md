@@ -1,71 +1,71 @@
-TEnemos # VERA: Master Plan (Road to Fab v1.0)
-![img.png](img.png)eS
-Este es el plan de acción autónomo para llevar a VERA de un script de Python a un Plugin nativo y profesional en la tienda de Epic Games (Fab). 
+# VERA: Master Plan (Road to Fab v1.0)
+![img.png](img.png)
+This is the autonomous action plan to take VERA from a Python script to a native, professional plugin on the Epic Games store (Fab).
 
-## 🟢 FASE 1: Interfaz Nativa (C++ Slate UI) [COMPLETADO]
-*Objetivo: Integrar el chat de VERA directamente en el Editor de Unreal.*
-1. [x] Generar andamiaje del módulo C++ (`VERAModule.h/cpp`).
-2. [x] Construir layout de Slate: Caja de historial (ScrollBox), Caja de entrada de texto (EditableTextBox), y Botón de envío.
-3. [x] Integrar lógica de UI: Al presionar "Send" o "Enter", capturar el texto y limpiar la caja.
+## 🟢 PHASE 1: Native Interface (C++ Slate UI) [COMPLETED]
+*Goal: Integrate the VERA chat directly into the Unreal Editor.*
+1. [x] Generate the C++ module scaffolding (`VERAModule.h/cpp`).
+2. [x] Build the Slate layout: history box (ScrollBox), text input box (EditableTextBox), and send button.
+3. [x] Integrate UI logic: when pressing "Send" or "Enter", capture the text and clear the box.
 
-## 🟡 FASE 2: Puente de Comunicación (Sockets C++) [COMPLETADO]
-*Objetivo: Conectar el Frontend (UI en Unreal) con el Backend (El Crew de VERA en Python).*
-1. [x] Implementar cliente TCP/Sockets en C++ (`FSocket`).
-2. [x] Enviar comandos del usuario desde la UI de Slate hacia el puerto de VERA.
-3. [x] Recibir respuestas de la IA y pintarlas en el historial del chat.
+## 🟡 PHASE 2: Communication Bridge (C++ Sockets) [COMPLETED]
+*Goal: Connect the frontend (Unreal UI) with the backend (VERA's Crew in Python).*
+1. [x] Implement a TCP/Sockets client in C++ (`FSocket`).
+2. [x] Send user commands from the Slate UI to VERA's port.
+3. [x] Receive the AI's responses and render them in the chat history.
 
-## 🟠 FASE 3: Auto-Arranque Silencioso [COMPLETADO]
-*Objetivo: Cero configuración para el usuario final.*
-1. [x] Cuando el usuario abre el plugin, C++ debe invocar silenciosamente `python_agent.py` para levantar el backend de VERA en segundo plano.
-2. [x] Asegurar que el proceso muera limpiamente al cerrar el Unreal Editor.
+## 🟠 PHASE 3: Silent Auto-Start [COMPLETED]
+*Goal: Zero configuration for the end user.*
+1. [x] When the user opens the plugin, C++ must silently invoke `python_agent.py` to spin up the VERA backend in the background.
+2. [x] Ensure the process dies cleanly when the Unreal Editor closes.
 
-## 🔴 FASE 4: Pulido y Empaquetado [COMPLETADO]
-*Objetivo: Listos para vender en Fab.*
-1. [x] Crear un logo 128x128 para el plugin (`Resources/Icon128.png`).
-2. [x] Compilación final con `PackageVERA.py` (C++ empaquetado exitosamente para UE 5.4 - 5.7).
-3. [ ] Expandir recetas (Ej: "Generar iluminación exterior automática").
+## 🔴 PHASE 4: Polish and Packaging [COMPLETED]
+*Goal: Ready to sell on Fab.*
+1. [x] Create a 128x128 logo for the plugin (`Resources/Icon128.png`).
+2. [x] Final build with `PackageVERA.py` (C++ packaged successfully for UE 5.4 - 5.7).
+3. [ ] Expand recipes (e.g. "Generate automatic exterior lighting").
 
-## 🟣 FASE 5: Auditoría y Optimización Autónoma [COMPLETADO]
-*Objetivo: Que VERA no solo reciba órdenes, sino que critique proactivamente tu proyecto para que corra a 60FPS.*
-1. [x] **Scene Performance Analyzer:** Crear un script autónomo que escanee el nivel en tiempo real para encontrar luces costosas, mallas dinámicas innecesarias y dar consejos de optimización de GPU.
-2. [x] **Auto-Linter de Convenciones:** Un robot que escanee todo tu `Content Browser` y renombre automáticamente assets mal nombrados (Ej: cambiar "casa" por "SM_Casa" según las reglas de Epic).
-3. [x] **QA Playtester Bots:** Agente autónomo que inicia Play-In-Editor (PIE) para probar el juego y leer los errores rojos.
+## 🟣 PHASE 5: Autonomous Audit and Optimization [COMPLETED]
+*Goal: VERA shouldn't just take orders, but proactively critique your project so it runs at 60 FPS.*
+1. [x] **Scene Performance Analyzer:** Create an autonomous script that scans the level in real time to find expensive lights, unnecessary dynamic meshes, and give GPU optimization advice.
+2. [x] **Convention Auto-Linter:** A robot that scans your entire `Content Browser` and automatically renames poorly named assets (e.g. changing "casa" to "SM_Casa" according to Epic's rules).
+3. [x] **QA Playtester Bots:** An autonomous agent that starts Play-In-Editor (PIE) to test the game and read the red errors.
 
-## 🔵 FASE 6: Fusión Multi-Modal (Voz y Visión Artística) [VISIÓN FUTURA]
-*Objetivo: Eliminar el teclado. Que hables con tu motor gráfico.*
-1. [ ] **Comandos de Voz (Whisper):** Integrar STT (Speech-to-Text) local para que presiones un botón en Slate y simplemente le dictes órdenes a VERA con tu micrófono ("VERA, haz que sea de noche").
-2. [ ] **Crítico de Arte (Gemini Vision):** Permitir que VERA tome capturas del *Viewport* y critique la composición, teoría del color y la iluminación de tu escena, ajustando el Post-Process Volume por ti.
+## 🔵 PHASE 6: Multi-Modal Fusion (Voice and Artistic Vision) [FUTURE VISION]
+*Goal: Eliminate the keyboard. Talk to your graphics engine.*
+1. [ ] **Voice Commands (Whisper):** Integrate local STT (Speech-to-Text) so you press a button in Slate and simply dictate orders to VERA with your microphone ("VERA, make it night time").
+2. [ ] **Art Critic (Gemini Vision):** Allow VERA to take captures of the *Viewport* and critique the composition, color theory, and lighting of your scene, adjusting the Post-Process Volume for you.
 
-## ⚫ FASE 7: Ingeniería Autónoma (Blueprints & Bug Fixing) [VISIÓN FUTURA]
-*Objetivo: Un agente hardcore que programe nodos visuales y arregle tus errores.*
-1. [x] **Generador de Blueprints (Graph API):** Usar Python para crear, enlazar y compilar nodos de Blueprint dinámicamente. Pídele a VERA "crea una puerta que se abra al acercarse" y el agente dibujará el Blueprint.
-2. [ ] **Auto-Fixer de Errores (The GER Loop):** Un watcher que lee el Output Log de Unreal en tiempo real. Si detecta texto rojo (errores de compilación o excepciones), VERA lo lee, entiende por qué se rompió tu código/Blueprint, y aplica la corrección sin que tú hagas nada.
+## ⚫ PHASE 7: Autonomous Engineering (Blueprints & Bug Fixing) [FUTURE VISION]
+*Goal: A hardcore agent that programs visual nodes and fixes your errors.*
+1. [x] **Blueprint Generator (Graph API):** Use Python to dynamically create, link, and compile Blueprint nodes. Ask VERA to "create a door that opens when approached" and the agent will draw the Blueprint.
+2. [ ] **Error Auto-Fixer (The GER Loop):** A watcher that reads Unreal's Output Log in real time. If it detects red text (compilation errors or exceptions), VERA reads it, understands why your code/Blueprint broke, and applies the fix without you doing anything.
 
 ---
 
-# 🚀 VISIÓN VERA AAA: EL AGENTE TÉCNICO AUTÓNOMO
-*Añadido el 10/06/2026. Objetivos a largo plazo para evolucionar VERA de un "chat" a un Lead Engineer.*
+# 🚀 VERA AAA VISION: THE AUTONOMOUS TECHNICAL AGENT
+*Added 2026-06-10. Long-term goals to evolve VERA from a "chat" into a Lead Engineer.*
 
-1. **Memoria del Proyecto (COMPLETADA)**: Base vectorial local, índice de assets, historial de cambios. (Mini Perforce).
-2. **Comprensión Total del Proyecto (COMPLETADA)**: Analizador global de FPS, Tick, World Partition, Lumen (`analyzer_agent.py`).
-3. **Generador de Sistemas Completos (COMPLETADA)**: `ArchitectAgent` que genera Blueprints, Data Assets, UI y Save Systems juntos.
-4. **Auto-Fixer Real (COMPLETADA)**: GER Loop avanzado para leer CPP, stack trace y recompilar sin intervención.
-5. **Arquitecto de Rendimiento (COMPLETADA)**: Ajuste automático de Luces, LODs, HLODs, Nanite y Streaming para llegar a 60 FPS (`performance_architect.py`).
-6. **Multiplayer Engineer (COMPLETADA)**: Detector de lógica no replicada, RPC faltantes y validación de Authority (`network_linter.py`).
-7. **Integración Git (PENDIENTE)**: Control de versiones autónomo (crear ramas, revertir, explicar diffs).
-8. **Director Técnico de Arte (COMPLETADA)**: Gemini Vision criticando composición, contraste y storytelling.
-9. **Constructor de Juegos Completo (COMPLETADA)**: El santo grial ("Haz un Extraction Shooter").
-10. **Modo Productor / PM (COMPLETADA)**: Análisis del estado del proyecto para detectar features faltantes (`pm_agent.py`).
+1. **Project Memory (COMPLETED)**: Local vector database, asset index, change history. (Mini Perforce).
+2. **Full Project Understanding (COMPLETED)**: Global analyzer for FPS, Tick, World Partition, Lumen (`analyzer_agent.py`).
+3. **Complete System Generator (COMPLETED)**: `ArchitectAgent` that generates Blueprints, Data Assets, UI, and Save Systems together.
+4. **Real Auto-Fixer (COMPLETED)**: Advanced GER Loop to read CPP, stack traces, and recompile without intervention.
+5. **Performance Architect (COMPLETED)**: Automatic tuning of Lights, LODs, HLODs, Nanite, and Streaming to reach 60 FPS (`performance_architect.py`).
+6. **Multiplayer Engineer (COMPLETED)**: Detector of non-replicated logic, missing RPCs, and Authority validation (`network_linter.py`).
+7. **Git Integration (PENDING)**: Autonomous version control (create branches, revert, explain diffs).
+8. **Technical Art Director (COMPLETED)**: Gemini Vision critiquing composition, contrast, and storytelling.
+9. **Complete Game Builder (COMPLETED)**: The holy grail ("Make an Extraction Shooter").
+10. **Producer / PM Mode (COMPLETED)**: Project status analysis to detect missing features (`pm_agent.py`).
 
-## Animaciones (roadmap)
+## Animations (roadmap)
 
-- **Fase 1 (implementada 2026-06-12):** tools `inspect_actor_animability` (read-only)
-  y `animate_actor` (destructiva: animate/spawn). Spec:
+- **Phase 1 (implemented 2026-06-12):** tools `inspect_actor_animability` (read-only)
+  and `animate_actor` (destructive: animate/spawn). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase1-design.md`.
-- **Fase 2 (implementada 2026-06-12):** percepción visual — tool `capture_actor`
-  (aislamiento + unlit + scrub/órbita determinísticos, restore garantizado). Spec:
+- **Phase 2 (implemented 2026-06-12):** visual perception — tool `capture_actor`
+  (isolation + unlit + deterministic scrub/orbit, guaranteed restore). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase2-capture-design.md`.
-- **Fase 3 (implementada 2026-06-12):** retargeting — tools `ensure_ik_rig`,
-  `ensure_retargeter`, `retarget_animations` (find-first, auto-creación). Spec:
+- **Phase 3 (implemented 2026-06-12):** retargeting — tools `ensure_ik_rig`,
+  `ensure_retargeter`, `retarget_animations` (find-first, auto-creation). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase3-retarget-design.md`.
-  Pendientes futuros: Sequencer, Control Rig.
+  Future pending: Sequencer, Control Rig.

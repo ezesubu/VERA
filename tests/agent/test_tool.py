@@ -2,8 +2,8 @@ from vera.agent.tool import Tool, ToolResult, ToolContext, image_block
 
 
 def test_toolresult_defaults():
-    r = ToolResult("hola")
-    assert r.content == "hola"
+    r = ToolResult("hi")
+    assert r.content == "hi"
     assert r.is_error is False
 
 
@@ -31,10 +31,10 @@ def test_toolcontext_report_emits():
 
 def test_toolcontext_report_noop_without_emit():
     ctx = ToolContext()
-    ctx.report("A", "msg")  # no debe lanzar excepción
+    ctx.report("A", "msg")  # must not raise an exception
 
 
-def test_image_block_forma_de_la_api():
+def test_image_block_api_shape():
     b = image_block("QUJD", media_type="image/jpeg")
     assert b == {
         "type": "image",
@@ -42,8 +42,8 @@ def test_image_block_forma_de_la_api():
     }
 
 
-def test_tool_result_acepta_lista_de_blocks():
-    blocks = [image_block("QUJD"), {"type": "text", "text": "screenshot del viewport"}]
+def test_tool_result_accepts_list_of_blocks():
+    blocks = [image_block("QUJD"), {"type": "text", "text": "viewport screenshot"}]
     r = ToolResult(blocks)
     assert r.content is blocks
     assert r.is_error is False

@@ -1,9 +1,10 @@
 # vera/agent/tools/ensure_ik_rig.py
-"""Find-first: garantiza que exista un IKRigDefinition para un esqueleto.
+"""Find-first: ensure an IKRigDefinition exists for a skeleton.
 
-Si ya hay un rig para ese skeleton lo devuelve (created: false, idempotente);
-si no, lo crea con auto-characterize. Si el esqueleto no coincide con ningún
-template humanoide conocido, borra el asset a medio crear y reporta honesto.
+If a rig already exists for that skeleton it returns it (created: false,
+idempotent); otherwise it creates one with auto-characterize. If the skeleton
+matches no known humanoid template, it deletes the half-created asset and reports
+honestly.
 """
 from __future__ import annotations
 
@@ -18,18 +19,18 @@ from vera.tools.ue_conn import send_json, UEConnectionError, UETimeoutError
 class EnsureIKRigTool(Tool):
     name = "ensure_ik_rig"
     description = (
-        "Garantiza que exista un IK Rig para el esqueleto de un actor o "
-        "SkeletalMesh (lo encuentra si ya existe, o lo crea con "
-        "auto-characterize). Es el paso 1 del retargeting: usala antes de "
-        "ensure_retargeter. Crea un asset: requiere confirmación."
+        "Ensures an IK Rig exists for the skeleton of an actor or "
+        "SkeletalMesh (finds it if it already exists, or creates it with "
+        "auto-characterize). This is step 1 of retargeting: use it before "
+        "ensure_retargeter. Creates an asset: requires confirmation."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "actor_name": {"type": "string",
-                           "description": "label de un actor skeletal del nivel"},
+                           "description": "label of a skeletal actor in the level"},
             "skeleton_path": {"type": "string",
-                              "description": "path /Game/... de un SkeletalMesh o IKRig"},
+                              "description": "/Game/... path of a SkeletalMesh or IKRig"},
         },
     }
     destructive = True
@@ -39,20 +40,20 @@ class EnsureIKRigTool(Tool):
         skel = (args.get("skeleton_path") or "").strip()
         if bool(actor) == bool(skel):
             return ToolResult(
-                "pasá exactamente una referencia: actor_name O skeleton_path",
+                "pass exactly one reference: actor_name OR skeleton_path",
                 is_error=True)
         ref = actor or skel
-        ctx.report("EnsureIKRig", f"resolviendo rig para {ref!r}")
+        ctx.report("EnsureIKRig", f"resolving rig for {ref!r}")
         try:
             resp = send_json(ctx.bridge_port, {"script": build_ensure_rig_script(ref)})
         except (UEConnectionError, UETimeoutError) as e:
-            return ToolResult(f"bridge caído: {e}", is_error=True)
+            return ToolResult(f"bridge down: {e}", is_error=True)
         if not resp.get("success"):
-            return ToolResult(resp.get("error") or "fallo en el editor", is_error=True)
+            return ToolResult(resp.get("error") or "editor failure", is_error=True)
         data = parse_json_output(resp.get("output"))
         if data is None:
             return ToolResult(
-                f"respuesta no parseable:\n{tail_of_output(resp.get('output'))}",
+                f"unparseable response:\n{tail_of_output(resp.get('output'))}",
                 is_error=True)
         rendered = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
         return ToolResult(rendered, is_error=bool(data.get("error")))
