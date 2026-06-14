@@ -1,4 +1,4 @@
-<div align="center">
+dale<div align="center">
 
 ![VERA — Virtual Engine Reasoning Agent](docs/images/fab-01-hero.jpg)
 
@@ -18,7 +18,9 @@ and verifies its own work — powered by the brain *you* choose (cloud or fully 
 
 > _Why did we build it? Because pasting LLM snippets into Unreal and praying isn't a workflow — and because the Auto-Fixer turned out cheaper than a new keyboard. 🧱⌨️_
 
-> _A 10-second GIF of VERA working belongs right here — record one from the editor and drop it in `docs/images/`._
+<div align="center">
+  <img src="docs/images/animated_vera_logo.gif" alt="VERA in Action" />
+</div>
 
 ---
 
@@ -139,19 +141,20 @@ visually verify** pipeline, driven entirely from chat.
 </div>
 
 Capabilities ship as **opt-in plugins** so the core stays lean — you enable only what
-you want, and a plugin's pip dependencies are pulled in on demand. Bundled plugins:
+you want, and a plugin's pip dependencies are pulled in on demand. 
+**All plugins below are bundled and included 100% for free out of the box:**
 
 | Plugin | What it adds |
 |---|---|
-| **Memory** | Persistent memory across conversations — facts, conventions, decisions. |
 | **Blueprint Forge** | Create Actor Blueprints via the Graph API (components, compile, save) — no clicking. |
+| **Computer Use** | Last-resort screen control for editor UI that has no Python API (click and capture). |
+| **Local IQ** | Raises a small local model's effective IQ with proven, reusable recipes. |
+| **Memory** | Persistent memory across conversations — facts, conventions, decisions. |
+| **Mobile / Performance Doctor** | Audits materials and mobile-compat issues; profiles the level. |
 | **Project Intelligence** | Read-only analysis of the on-disk project: engine, plugins, assets. |
 | **Project Playbook** | Loads this project's conventions, decisions and known traps into context. |
-| **Mobile / Performance Doctor** | Audits materials and mobile-compat issues; profiles the level. |
-| **Scene Vibe** | Sets the cinematic mood of a level for showcase shots (5 presets). |
-| **Source Control** | Git from inside the editor: status, diff, log, and gated commits. |
-| **Local IQ** | A disciplined plan → act → verify loop that raises a small local model's effective IQ. |
-| **Computer Use** | Last-resort screen capture + click for editor UI with no Python API (off by default). |
+| **Scene Vibe** | Instantly sets the cinematic MOOD of the open level (cyberpunk, noir, aztec, etc.). |
+| **Source Control** | Git source control for VERA: inspect diffs and create gated commits safely. |
 
 ### Write your own plugin
 

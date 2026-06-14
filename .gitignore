@@ -23,18 +23,17 @@ UE57/Binaries/
 UE57/DerivedDataCache/
 UE57/.vs/
 UE57/*.sln
-# Content: only the VERA Python side ships. Ignore everything else under
-# Content (marketplace asset packs, generated assets, World Partition data).
+# Ignorar todo el Content generado/descargado excepto el código fuente Python:
 UE57/Content/*
 !UE57/Content/Python/
 
-# Loose game-demo experiment scripts (not the VERA product)
+# Ignorar los scripts sueltos de experimentos que no son VERA
 UE57/Content/Python/vera_autopilot.py
 UE57/Content/Python/vera_enemy.py
 UE57/Content/Python/vera_horror.py
 UE57/Content/Python/vera_lava.py
 
-# UE project shell — not part of the VERA product
+# Ignorar configuración de motor
 UE57.uproject
 UE57/Config/
 UE57/Plugins/
