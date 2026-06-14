@@ -106,3 +106,45 @@ def test_list_providers_returns_status_and_needs_key(monkeypatch):
     assert by_id["LOCAL"]["status"] == "not_configured"  # no VERA_LOCAL_BASE_URL
     assert by_id["LOCAL"]["needs_key"] is False
     assert "label" in by_id["LOCAL"]
+
+
+# ---------------- default_provider / default_model ----------------
+
+def _clear_all_providers(monkeypatch):
+    for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "VERA_LOCAL_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_default_provider_prefers_a_configured_one(monkeypatch):
+    # Only a local server is set up → the default must be LOCAL, NOT Anthropic.
+    _clear_all_providers(monkeypatch)
+    monkeypatch.setenv("VERA_LOCAL_BASE_URL", "http://localhost:1234/v1")
+    assert models.default_provider() == "LOCAL"
+
+
+def test_default_provider_prefers_anthropic_when_key_present(monkeypatch):
+    # Cloud key beats local in the preference order.
+    _clear_all_providers(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
+    monkeypatch.setenv("VERA_LOCAL_BASE_URL", "http://localhost:1234/v1")
+    assert models.default_provider() == "ANTHROPIC"
+
+
+def test_default_provider_falls_back_to_anthropic_when_nothing_configured(monkeypatch):
+    # Nothing configured → ANTHROPIC, so make_llm_client emits a clear "set a key"
+    # error instead of silently doing nothing.
+    _clear_all_providers(monkeypatch)
+    assert models.default_provider() == "ANTHROPIC"
+
+
+def test_default_model_is_registry_first_for_cloud():
+    assert models.default_model("ANTHROPIC") == models.PROVIDERS["ANTHROPIC"]["models"][0]
+
+
+def test_default_model_local_discovers_first_live(monkeypatch):
+    monkeypatch.setenv("VERA_LOCAL_BASE_URL", "http://localhost:1234/v1")
+    monkeypatch.setattr(
+        models, "list_models",
+        lambda provider, http=None: {"provider": provider, "models": ["qwen", "llama"], "status": "online"},
+    )
+    assert models.default_model("LOCAL") == "qwen"

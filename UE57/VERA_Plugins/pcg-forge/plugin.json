@@ -1,0 +1,7 @@
+{
+  "name": "PCG Forge Tools",
+  "description": "Forges Procedural Content Generation (PCG) graphs programmatically. Bypasses engine limitations to wire nodes, inject meshes, and automate massive environmental scattering — zero clicking required.",
+  "version": "1.0",
+  "author": "VERA",
+  "tools": ["pcg_forge_tools.py"]
+}

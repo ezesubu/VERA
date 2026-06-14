@@ -89,23 +89,39 @@ def _handle_client(conn, addr):
 
         payload = json.loads(data.decode("utf-8").strip())
         script = payload.get("script", "")
+        stream = payload.get("stream", False)
+        # If streaming, we allow an effectively infinite timeout (e.g. 1 hour) for heavy operations
+        max_timeout = 3600.0 if stream else MAIN_THREAD_TIMEOUT
 
         task_id = str(uuid.uuid4())
         event = threading.Event()
         _result_events[task_id] = event
         _task_queue.put((task_id, script))
 
-        if event.wait(timeout=MAIN_THREAD_TIMEOUT):
-            result = _results.pop(task_id, None)
-        else:
+        waited = 0.0
+        result = None
+        while waited < max_timeout:
+            if event.wait(timeout=5.0):
+                result = _results.pop(task_id, None)
+                break
+            waited += 5.0
+            if stream:
+                try:
+                    conn.sendall((json.dumps({"type": "heartbeat", "waited": waited}) + "\n").encode("utf-8"))
+                except Exception:
+                    # Client disconnected
+                    break
+
+        if result is None:
             result = {
                 "success": None,
                 "output": "",
                 "error": "The editor did not process the script in %.0fs "
-                         "(modal dialog open or long load?)." % MAIN_THREAD_TIMEOUT,
+                         "(modal dialog open or long load?)." % max_timeout,
             }
-        if result is None:
-            result = {"success": False, "output": "", "error": "result lost"}
+            
+        if stream:
+            result["type"] = "final"
 
         conn.sendall((json.dumps(result) + "\n").encode("utf-8"))
     except Exception as e:

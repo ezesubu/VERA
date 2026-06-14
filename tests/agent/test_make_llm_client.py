@@ -10,12 +10,29 @@ def test_make_llm_client_anthropic_returns_anthropic(monkeypatch):
     class FakeAnthropic:
         def __init__(self, *a, **k):
             created["yes"] = True
+            created["api_key"] = k.get("api_key")
 
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")  # a key is now required
     import anthropic
     monkeypatch.setattr(anthropic, "Anthropic", FakeAnthropic)
     client = factory.make_llm_client("ANTHROPIC", "claude-opus-4-8")
     assert isinstance(client, FakeAnthropic)
     assert created["yes"]
+    assert created["api_key"] == "sk-ant"  # passed explicitly, not just via env
+
+
+def test_make_llm_client_anthropic_missing_key_raises_clear_error(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ValueError) as exc:
+        factory.make_llm_client("ANTHROPIC", "claude-opus-4-8")
+    msg = str(exc.value).lower()
+    assert "api key" in msg and "setup" in msg  # actionable, not a cryptic TypeError
+
+
+def test_make_llm_client_openai_missing_key_raises(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(ValueError):
+        factory.make_llm_client("OPENAI", "gpt-4o")
 
 
 def test_make_llm_client_local_returns_compat_client(monkeypatch):

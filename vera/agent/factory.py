@@ -165,17 +165,26 @@ def make_llm_client(provider: str, model: str):
     if spec is None:
         raise ValueError(f"unknown provider: {provider!r}")
 
+    # Pre-flight: refuse to build a client we know can't authenticate, with an
+    # actionable message — otherwise a missing key surfaces much later as a
+    # cryptic error deep inside the SDK when the first request is sent.
+    from vera.agent.models import base_url_for, provider_status
+    status = provider_status(provider)
+    if status == "missing_key":
+        raise ValueError(
+            f"No API key set for {spec['label']}. Add it in VERA's Setup tab, "
+            "or pick a provider that's already configured.")
+    if status == "not_configured":  # LOCAL with no VERA_LOCAL_BASE_URL
+        raise ValueError(
+            f"{spec['label']} has no server URL. Set it in VERA's Setup tab "
+            "(or the VERA_LOCAL_BASE_URL environment variable).")
+
     if spec.get("native"):
         import anthropic
-        return anthropic.Anthropic()
+        return anthropic.Anthropic(api_key=os.environ[spec["env"]])
 
     from vera.llm.openai_compat_client import OpenAICompatClient
-    from vera.agent.models import base_url_for
     base_url = base_url_for(provider)
-    if not base_url:  # LOCAL with no VERA_LOCAL_BASE_URL set
-        raise ValueError(
-            f"provider {provider!r} has no base_url configured "
-            "(set VERA_LOCAL_BASE_URL to your local server's /v1 URL)")
     env = spec.get("env")
     key = os.environ.get(env) if env else None
     return OpenAICompatClient(base_url, key, model, timeout=llm_timeout_seconds())

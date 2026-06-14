@@ -5,6 +5,7 @@ import socket
 import threading
 
 from vera.agent.factory import make_llm_client
+from vera.agent.models import default_model, default_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -124,8 +125,10 @@ class VeraServer:
             if not command:
                 emit({"type": "final", "status": "error", "msg": "Empty command."})
                 return
-            provider = payload.get("provider") or DEFAULT_PROVIDER
-            model = payload.get("model") or DEFAULT_MODEL
+            # No explicit provider/model (e.g. first run before Setup): resolve to
+            # whatever the user actually configured, not a hardcoded Anthropic.
+            provider = payload.get("provider") or default_provider()
+            model = payload.get("model") or default_model(provider)
             mode = payload.get("mode") or DEFAULT_MODE
             session_id = payload.get("session_id") or "default"
             # Optional attached image: {"data": "<base64>", "media_type": "..."}.

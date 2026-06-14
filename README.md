@@ -1,6 +1,8 @@
 <div align="center">
+  <video src="https://github.com/user-attachments/assets/0ee66435-a6ca-45cf-848d-3dbe7a8d3c10" width="800" autoplay loop muted playsinline></video>
+</div>
 
-![VERA — Virtual Engine Reasoning Agent](docs/images/fab-01-hero.jpg)
+<div align="center">
 
 # VERA — Virtual Engine Reasoning Agent
 
@@ -71,6 +73,8 @@ an **agent**: you ask in plain language, and it *plans*, *calls the tools it nee
 | 🛰️ **Agentic tool loop** | Plans → calls tools → observes → self-corrects → verifies. Not a one-shot snippet generator. |
 | 👁️ **Multimodal vision** | Captures the viewport / individual actors and feeds the image to the model. Paste, drag, or copy images into the chat too. |
 | 🎞️ **Animation pipeline** | Build an IK rig, set up a retargeter, batch-retarget animations, play/scrub them, and visually verify — all from chat. |
+| 🌍 **Procedural worlds** | Generate massive environments using PCG. VERA can wire graph nodes to spawn forests, cities, and scattered props automatically. |
+| ⚡ **Async execution** | Heavy tasks (like compiling 10k shaders or generating huge terrains) run asynchronously with live heartbeats, preventing editor freezes and timeouts. |
 | 🧩 **Plugin system** | Drop-in `tools/` + `SKILL.md`. Toggle per plugin. Per-plugin pip deps installed on demand. |
 | 🔌 **MCP server** | Expose the editor to Claude Code (or any MCP client): exec Python, screenshot, tail logs, status, run a VERA command. |
 | 🛡️ **Safety modes** | **Ask** (confirm destructive actions) · **Auto** (autopilot) · **Read** (inspect only). |
@@ -79,6 +83,10 @@ an **agent**: you ask in plain language, and it *plans*, *calls the tools it nee
 | 🖥️ **Cross-platform** | Windows, macOS, Linux. No hardcoded paths. |
 
 ## The brain — bring your own LLM
+
+<div align="center">
+  <img src="docs/images/VeraLiveLocalQwen25.png" alt="VERA running locally with Qwen" width="800" />
+</div>
 
 VERA speaks the **OpenAI `/v1` standard**, so it works with essentially any backend:
 
@@ -151,6 +159,7 @@ you want, and a plugin's pip dependencies are pulled in on demand.
 | **Local IQ** | Raises a small local model's effective IQ with proven, reusable recipes. |
 | **Memory** | Persistent memory across conversations — facts, conventions, decisions. |
 | **Mobile / Performance Doctor** | Audits materials and mobile-compat issues; profiles the level. |
+| **PCG Forge** | Autonomously wire Procedural Content Generation (PCG) graphs to spawn vast, rule-based worlds and scatter props without manual placement. |
 | **Project Intelligence** | Read-only analysis of the on-disk project: engine, plugins, assets. |
 | **Project Playbook** | Loads this project's conventions, decisions and known traps into context. |
 | **Scene Vibe** | Instantly sets the cinematic MOOD of the open level (cyberpunk, noir, aztec, etc.). |
@@ -182,6 +191,10 @@ Drop the folder in `VERA_Plugins/`, toggle it on in the **Plugins** tab — done
 
 ## MCP — drive the editor from your IDE
 
+<div align="center">
+  <img src="docs/images/AngravityIDELive.png" alt="Driving Unreal from Antigravity IDE" width="800" />
+</div>
+
 VERA ships an [MCP](https://modelcontextprotocol.io) server, so the AI in **your
 favorite IDE or agent** can drive your Unreal editor — write Python into it, read
 the log, screenshot the viewport, or run a full VERA command — without leaving your
@@ -195,11 +208,21 @@ Drop this into your MCP client's config (e.g. `.mcp.json`):
     "vera-ue": {
       "command": "python",
       "args": ["-m", "vera.tools.mcp_server"],
-      "env": { "VERA_UE_PROJECT_DIR": "C:/path/to/YourProject" }
+      "env": {
+        "PYTHONPATH": "C:/path/to/VERA",
+        "VERA_UE_PROJECT_DIR": "C:/path/to/YourProject"
+      }
     }
   }
 }
 ```
+
+> **`PYTHONPATH` must point at the VERA repo root** (the folder containing the
+> `vera/` package), so `python -m vera.tools.mcp_server` can find it. Some clients
+> (e.g. Claude Code) launch the server from the project root and work without it,
+> but most run from a different working directory — if you see
+> `ModuleNotFoundError: No module named 'vera'`, this is the fix. You can also
+> point `command` at a specific interpreter (e.g. a full `python.exe` path).
 
 Works with any MCP-capable client — **Claude Code**, **Cursor**, **VS Code**
 (Cline / Continue / Copilot), **JetBrains Rider** (AI Assistant), **Windsurf**,
@@ -294,8 +317,9 @@ Switch **Ask / Auto / Read** in the composer to control how much freedom VERA ha
 - **`vera/llm/`** — the OpenAI-compatible adapter (duck-types the Anthropic surface).
 - **`vera/tools/`** — the MCP server and the UE socket connection.
 - **`vera/core/`** — the editor server (`vera_server`) and the progress blackboard.
-- **`UE57/Content/Python/`** — the editor scripts + the chat UI (`vera_chat/`).
-- **`UE57/VERA_Plugins/`** — the studio plugins.
+- **`Content/Python/`** — the editor scripts (including the **Async Bridge** that prevents timeouts during heavy generations) + the chat UI (`vera_chat/`).
+- **`Content/Python/vera/vera_graph_utils.py`** — The universal graph standard library, resolving API differences across Blueprints, PCG, and Materials.
+- **`VERA_Plugins/`** — the studio plugins.
 
 ## Contributing
 

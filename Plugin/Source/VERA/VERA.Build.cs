@@ -1,3 +1,5 @@
+// Copyright 2026 maVERAick. All Rights Reserved.
+
 using UnrealBuildTool;
 
 public class VERA : ModuleRules
@@ -6,8 +8,10 @@ public class VERA : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// Minimal module: VERA's functionality is implemented in Python.
+		// VERA's logic is in Python; this module only registers the Slate style set
+		// that gives the editor toolbar button its VERA logo icon.
 		PublicDependencyModuleNames.AddRange(new string[] { "Core" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "CoreUObject", "Engine" });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"CoreUObject", "Engine", "Slate", "SlateCore", "Projects" });
 	}
 }

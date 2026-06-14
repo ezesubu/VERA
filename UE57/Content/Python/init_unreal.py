@@ -21,6 +21,18 @@ _VERA_DEPS = os.environ.get("VERA_DEPS_DIR") or os.path.join(_REPO_ROOT, ".ue_de
 if _VERA_DEPS not in sys.path:
     sys.path.insert(0, _VERA_DEPS)
 
+# In the packaged (Fab) plugin, third-party deps (anthropic, openai, mcp, PySide6)
+# are bundled under Content/Python/Lib/site-packages. UE only auto-adds the
+# platform path (Lib/Win64/site-packages), so register the bundled folder here so
+# imports resolve with no runtime pip install. Harmless in dev (folder is absent).
+# Use site.addsitedir (NOT sys.path.insert) so .pth files are processed — notably
+# pywin32.pth, which registers pywintypes' DLL directory that mcp depends on.
+import site as _site
+_BUNDLED_SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "Lib", "site-packages")
+if os.path.isdir(_BUNDLED_SITE):
+    _site.addsitedir(_BUNDLED_SITE)
+
 import unreal
 
 # First-run setup: auto-install the brain's pip deps (anthropic/openai/mcp) into

@@ -928,8 +928,10 @@ def create_vera_menu():
         entry.set_label("🤖 VERA")
         entry.set_tool_tip("Open VERA chat interface")
 
-        # Restore the brain (antenna) icon because Unreal forces the wrench if it's empty
-        entry.set_icon("EditorStyle", "ClassIcon.AIController")
+        # VERA logo, registered as a Slate brush by the C++ module (FVERAModule).
+        # If that module isn't loaded (e.g. running the Python in a dev project
+        # without the compiled plugin), Unreal falls back to a default glyph.
+        entry.set_icon("VERAStyle", "VERA.Logo")
 
         entry.set_string_command(
             type=unreal.ToolMenuStringCommandType.PYTHON,

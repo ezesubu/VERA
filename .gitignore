@@ -63,3 +63,7 @@ start_vera_autopilot.py
 
 # Legacy 'Crew' subsystem — kept locally for reference, excluded from the public repo
 legacy/
+
+# Media that is now hosted on GitHub CDN
+docs/videos/
+*.mp4

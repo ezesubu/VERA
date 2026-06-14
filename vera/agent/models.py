@@ -138,3 +138,33 @@ def list_providers() -> List[dict]:
         }
         for pid, spec in PROVIDERS.items()
     ]
+
+
+# Order VERA prefers when the caller doesn't pick a provider: a configured cloud
+# provider first, then a local server. Lets a fresh install "just work" with
+# whatever the user actually set up, instead of always assuming Anthropic.
+_PROVIDER_PREFERENCE = ("ANTHROPIC", "OPENAI", "GEMINI", "LOCAL")
+
+
+def default_provider() -> str:
+    """The provider to use when none is explicitly selected: the first CONFIGURED
+    provider in preference order, or ANTHROPIC as a last resort (so a fully
+    unconfigured install gets a clear 'set a key' error, not a silent failure)."""
+    for pid in _PROVIDER_PREFERENCE:
+        if provider_status(pid) == "ok":
+            return pid
+    return "ANTHROPIC"
+
+
+def default_model(provider: str) -> str:
+    """A sensible model id for `provider` when none is chosen: the registry's
+    first static model, or — for LOCAL — the first live-discovered model."""
+    spec = PROVIDERS.get(provider) or {}
+    static = spec.get("models") or []
+    if static:
+        return static[0]
+    if spec.get("discover"):
+        ids = list_models(provider).get("models") or []
+        if ids:
+            return ids[0]
+    return ""

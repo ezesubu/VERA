@@ -69,3 +69,7 @@ This is the autonomous action plan to take VERA from a Python script to a native
   `ensure_retargeter`, `retarget_animations` (find-first, auto-creation). Spec:
   `docs/superpowers/specs/2026-06-12-vera-animation-phase3-retarget-design.md`.
   Future pending: Sequencer, Control Rig.
+
+## 🌟 Nice to Have Plugins (Graph Modules)
+- **`material-forge`**: A specialized plugin that leverages the new `vera_graph_utils` to autonomously generate, wire, and compile Master Materials and Instances. Useful for art days.
+- **`metasound-forge`**: A specialized plugin to allow VERA to wire MetaSound nodes, creating procedural synthesizers, audio cues, and dynamic music directly within the engine. Useful for audio days.
