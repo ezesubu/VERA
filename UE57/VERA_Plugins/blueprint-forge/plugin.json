@@ -1,0 +1,7 @@
+{
+  "name": "Blueprint Forge",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Creates Actor Blueprints programmatically via Unreal's Python Graph API (BlueprintFactory + BlueprintEditorLibrary): make a Blueprint, add components, compile and save — no clicking. Use when the user asks to create a Blueprint class.",
+  "enabled": true
+}

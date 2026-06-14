@@ -117,3 +117,53 @@ def test_set_enabled_persists_to_manifest(tmp_path):
 def test_set_enabled_unknown_plugin_returns_false(tmp_path):
     _write_plugin(tmp_path, "alpha")
     assert plug.set_plugin_enabled(str(tmp_path), "ghost", False) is False
+
+
+# ---------------- per-plugin pip deps ----------------
+
+def test_deps_parsed_from_manifest(tmp_path):
+    _write_plugin(tmp_path, "heavy",
+                  manifest={"deps": ["pyautogui>=0.9.54", "Pillow>=10.0.0"],
+                            "deps_import": "pyautogui"})
+    p = plug.discover_plugins(str(tmp_path))[0]
+    assert p.deps == ["pyautogui>=0.9.54", "Pillow>=10.0.0"]
+    assert p.deps_import == "pyautogui"
+
+
+def test_deps_default_empty_and_bad_type_ignored(tmp_path):
+    _write_plugin(tmp_path, "a")                          # no deps key
+    _write_plugin(tmp_path, "b", manifest={"deps": "notalist"})
+    by_id = {p.id: p for p in plug.discover_plugins(str(tmp_path))}
+    assert by_id["a"].deps == [] and by_id["a"].deps_import is None
+    assert by_id["b"].deps == []
+
+
+def test_plugin_missing_deps_present_vs_absent(tmp_path):
+    # deps_import resolvable (stdlib) → nothing missing
+    _write_plugin(tmp_path, "present",
+                  manifest={"deps": ["something>=1"], "deps_import": "json"})
+    # deps_import not importable → returns the requirements
+    _write_plugin(tmp_path, "absent",
+                  manifest={"deps": ["ghostpkg>=1"], "deps_import": "no_such_module_xyz"})
+    by_id = {p.id: p for p in plug.discover_plugins(str(tmp_path))}
+    assert plug.plugin_missing_deps(by_id["present"]) == []
+    assert plug.plugin_missing_deps(by_id["absent"]) == ["ghostpkg>=1"]
+
+
+def test_install_packages_builds_pip_command_and_succeeds(tmp_path):
+    calls = []
+    ok = plug.install_packages(["pyautogui>=0.9.54"], str(tmp_path),
+                               python="py", runner=lambda cmd: calls.append(cmd))
+    assert ok is True
+    assert calls and calls[0][:5] == ["py", "-m", "pip", "install", "--target"]
+    assert "pyautogui>=0.9.54" in calls[0]
+
+
+def test_install_packages_empty_is_noop():
+    assert plug.install_packages([], "/tmp/whatever") is True
+
+
+def test_install_packages_failure_returns_false(tmp_path):
+    def boom(cmd):
+        raise RuntimeError("pip exploded")
+    assert plug.install_packages(["x"], str(tmp_path), python="py", runner=boom) is False

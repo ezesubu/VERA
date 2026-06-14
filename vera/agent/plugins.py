@@ -18,15 +18,17 @@ so the state survives restarts with no side files.
 """
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import inspect
 import json
 import logging
 import os
+import subprocess
 import sys
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Type
+from typing import Callable, List, Optional, Type
 
 from vera.agent.tool import Tool
 
@@ -48,6 +50,10 @@ class Plugin:
     dir: str
     tool_classes: List[Type[Tool]] = field(default_factory=list)
     skill_text: Optional[str] = None
+    # Optional pip requirements this plugin needs (installed on enable, not for
+    # the lean core). `deps_import` is one import name used to probe presence.
+    deps: List[str] = field(default_factory=list)
+    deps_import: Optional[str] = None
 
 
 def discover_plugins(plugins_dir: str) -> List[Plugin]:
@@ -87,6 +93,9 @@ def _load_plugin(pid: str, pdir: str) -> Optional[Plugin]:
 
     tool_classes = _load_tool_classes(pid, os.path.join(pdir, TOOLS_DIR))
 
+    deps = man.get("deps") or []
+    if not isinstance(deps, list):
+        deps = []
     return Plugin(
         id=pid,
         name=man.get("name") or pid,
@@ -97,6 +106,8 @@ def _load_plugin(pid: str, pdir: str) -> Optional[Plugin]:
         dir=pdir,
         tool_classes=tool_classes,
         skill_text=skill_text,
+        deps=[str(d) for d in deps],
+        deps_import=man.get("deps_import") or None,
     )
 
 
@@ -174,3 +185,50 @@ def set_plugin_enabled(plugins_dir: str, plugin_id: str, enabled: bool) -> bool:
     except Exception as e:
         logger.warning("[plugins] could not set enabled for %r: %s", plugin_id, e)
         return False
+
+
+def _probe_name(plugin: "Plugin") -> Optional[str]:
+    """Import name used to check whether the plugin's deps are already present."""
+    if plugin.deps_import:
+        return plugin.deps_import
+    if plugin.deps:
+        # naive fallback: package name before any version/extra marker
+        first = plugin.deps[0]
+        for sep in ("==", ">=", "<=", "~=", ">", "<", "[", " "):
+            first = first.split(sep)[0]
+        return first.strip() or None
+    return None
+
+
+def plugin_missing_deps(plugin: "Plugin") -> List[str]:
+    """The plugin's declared pip requirements when they are not importable yet.
+    Empty list when nothing is declared or the deps already resolve."""
+    if not plugin.deps:
+        return []
+    probe = _probe_name(plugin)
+    if probe and importlib.util.find_spec(probe) is not None:
+        return []
+    return list(plugin.deps)
+
+
+def install_packages(requirements: List[str], target_dir: str, *,
+                     python: Optional[str] = None,
+                     runner: Optional[Callable] = None) -> bool:
+    """pip-install `requirements` into `target_dir` (which must be on sys.path).
+
+    `python` defaults to the current interpreter (inside Unreal that IS the
+    embedded one, so wheels match). `runner` is injectable for tests; it defaults
+    to subprocess.check_call. Returns True on success; never raises."""
+    if not requirements:
+        return True
+    python = python or sys.executable
+    cmd = [python, "-m", "pip", "install", "--target", target_dir, *requirements]
+    runner = runner or subprocess.check_call
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        runner(cmd)
+    except Exception as e:
+        logger.error("[plugins] dep install failed for %s: %s", requirements, e)
+        return False
+    importlib.invalidate_caches()  # make freshly-installed packages importable now
+    return True

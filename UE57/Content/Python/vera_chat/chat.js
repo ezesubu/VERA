@@ -8,8 +8,16 @@ let TABS = [];                // [{id,title,provider,model,mode,compact,events:[
 let activeId = null;          // active tab id
 let pendingId = null;         // tab awaiting a backend response (commands serialize)
 let STATE = null;             // mirror of the active tab (provider/model/mode/compact)
+let pendingImage = null;      // {data, media_type} attached to the next command
+let COMMANDS = [];            // tool catalog for the / slash menu
+let slashState = null;        // {level, items, idx, cmd} when the / menu is open
+let lastDay = null;           // day key of the last rendered turn (for date separators)
+let windowFromTurn = 0;       // first turn index currently in the DOM (windowed scroll)
+const WINDOW_TURNS = 25;      // turns shown initially / kept in the DOM window
+const EARLIER_CHUNK = 20;     // turns loaded each time you scroll up / click "earlier"
+const PERSIST_CAP_TURNS = 60; // cap persisted turns per tab (disk optimization)
 
-const PERSIST_TYPES = ["user", "progress", "image", "final", "error"];
+const PERSIST_TYPES = ["user", "say", "tool_use", "progress", "image", "final", "error"];
 
 // ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -28,18 +36,77 @@ function md(text) {
   div.className = "md";
   div.innerHTML = safe;
   div.querySelectorAll("pre code").forEach((el) => hljs.highlightElement(el));
+  // copy button on each code block
+  div.querySelectorAll("pre").forEach((pre) => {
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = "copy";
+    btn.onclick = () => {
+      const code = pre.querySelector("code");
+      const txt = code ? code.textContent : pre.textContent;
+      copyText(txt);
+      btn.textContent = "copied"; setTimeout(() => { btn.textContent = "copy"; }, 1200);
+    };
+    pre.appendChild(btn);
+  });
   return div;
 }
 
-function userBubble(text) {
+function copyText(txt) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).catch(() => fallbackCopy(txt));
+  } else { fallbackCopy(txt); }
+}
+function fallbackCopy(txt) {
+  const ta = document.createElement("textarea");
+  ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+  ta.remove();
+}
+
+function userBubble(text, image) {
   const row = document.createElement("div");
   row.className = "msg row-user";
   const b = document.createElement("div");
   b.className = "user";
-  b.textContent = text;
+  if (image && image.data) {
+    const img = document.createElement("img");
+    img.className = "user-img";
+    img.src = "data:" + (image.media_type || "image/png") + ";base64," + image.data;
+    b.appendChild(img);
+  }
+  if (text) {
+    const t = document.createElement("div");
+    t.textContent = text;
+    b.appendChild(t);
+  }
   row.appendChild(b);
   $("chat").appendChild(row);
   return row;
+}
+
+// ---------- date separators ("Today" / "Yesterday" / "Jun 13") ----------
+function dayKey(ts) { const d = new Date(ts || Date.now()); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); }
+function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function dayLabel(ts) {
+  const d = new Date(ts || Date.now());
+  const today = new Date(); const yest = new Date(); yest.setDate(today.getDate() - 1);
+  if (sameDay(d, today)) return "Today";
+  if (sameDay(d, yest)) return "Yesterday";
+  const opts = { month: "short", day: "numeric" };
+  if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString(undefined, opts);
+}
+function maybeDateSep(ts) {
+  const k = dayKey(ts);
+  if (k === lastDay) return;
+  lastDay = k;
+  const sep = document.createElement("div");
+  sep.className = "day-sep";
+  const s = document.createElement("span"); s.textContent = dayLabel(ts);
+  sep.appendChild(s);
+  $("chat").appendChild(sep);
 }
 
 function ensureTimeline() {
@@ -131,9 +198,18 @@ window.veraChat = {
       case "plugins": return renderPlugins(e.plugins || []);
       case "plugin_set": {
         const row = document.querySelector('.plug[data-id="' + e.id + '"]');
-        if (row) { row.classList.toggle("off", !e.enabled); const cb = row.querySelector("input"); if (cb) cb.checked = !!e.enabled; }
+        if (row) {
+          row.classList.toggle("off", !e.enabled);
+          const cb = row.querySelector("input"); if (cb) cb.checked = !!e.enabled;
+          if (e.msg) {
+            let note = row.querySelector(".plug-note");
+            if (!note) { note = document.createElement("div"); note.className = "plug-note"; row.appendChild(note); }
+            note.textContent = e.msg;
+          }
+        }
         return;
       }
+      case "commands": { COMMANDS = e.commands || []; if (slashState) renderSlash(); return; }
       case "history": { (e.events || []).forEach((ev) => window.veraChat.dispatch(ev)); return; }
     }
 
@@ -145,13 +221,19 @@ window.veraChat = {
       tab.title = e.msg.slice(0, 24) + (e.msg.length > 24 ? "…" : "");
       renderTabs();
     }
+    if (!e._ts) e._ts = Date.now();
     if (PERSIST_TYPES.includes(e.type)) tab.events.push(e);
 
-    if (tab === activeTab()) renderEvent(e);
+    if (tab === activeTab()) {
+      const es = $("chat").querySelector(".empty-state");
+      if (es) es.remove();
+      renderEvent(e);
+    }
 
     if (e.type === "final" || e.type === "error" || e.type === "interrupted") {
       pendingId = null;
       persist();
+      updateSendButton();
     }
     scrollBottom();
   },
@@ -160,7 +242,14 @@ window.veraChat = {
 // Renders ONE chat event into #chat (the active tab's view).
 function renderEvent(e) {
   switch (e.type) {
-    case "user": { closeTimeline(); userBubble(e.msg); ensureTimeline(); startSpin(); break; }
+    case "user": {
+      closeTimeline();
+      maybeDateSep(e._ts);
+      const r = userBubble(e.msg, e.image);
+      if (e._ts) r.title = new Date(e._ts).toLocaleString();
+      ensureTimeline(); startSpin();
+      break;
+    }
     case "progress": {
       stopSpin();
       const tl = ensureTimeline();
@@ -170,6 +259,32 @@ function renderEvent(e) {
       const b = document.createElement("b"); b.textContent = e.agent || "";
       item.appendChild(b);
       item.appendChild(document.createTextNode(" — " + (e.msg || "")));
+      tl.appendChild(item);
+      break;
+    }
+    case "say": {  // the model's narration ("I'll do X…") alongside its tool calls
+      stopSpin();
+      const tl = ensureTimeline();
+      const item = document.createElement("div");
+      item.className = "tl-item say";
+      item.appendChild(md(e.msg));
+      tl.appendChild(item);
+      break;
+    }
+    case "tool_use": {  // VERA is calling a tool — show its name + args
+      stopSpin();
+      const tl = ensureTimeline();
+      const item = document.createElement("div");
+      item.className = "tl-item tool";
+      const nm = document.createElement("span"); nm.className = "t-name"; nm.textContent = e.agent || "tool";
+      item.appendChild(nm);
+      let a = "";
+      try { a = typeof e.input === "string" ? e.input : JSON.stringify(e.input); } catch (_) { a = String(e.input); }
+      if (a && a !== "{}" && a !== "null" && a !== '""') {
+        const arg = document.createElement("span"); arg.className = "t-arg";
+        arg.textContent = " " + (a.length > 90 ? a.slice(0, 90) + "…" : a);
+        item.appendChild(arg);
+      }
       tl.appendChild(item);
       break;
     }
@@ -280,16 +395,57 @@ function newTab(opts = {}) {
   return t;
 }
 
+// Group a flat event list into turns (each `user` message starts a turn).
+function splitTurns(events) {
+  const turns = [];
+  let cur = null;
+  (events || []).forEach((e) => {
+    if (e.type === "user") { cur = [e]; turns.push(cur); }
+    else if (cur) { cur.push(e); }
+    else { cur = [e]; turns.push(cur); }  // leading non-user events (greeting)
+  });
+  return turns;
+}
+
+// Render only the windowed slice of turns into #chat. keepScroll preserves the
+// viewport when prepending older turns.
+function renderWindow(t, keepScroll) {
+  const chat = $("chat");
+  const prevH = chat.scrollHeight, prevTop = chat.scrollTop;
+  stopSpin(); currentTimeline = null; lastDay = null;
+  chat.innerHTML = "";
+  const turns = splitTurns(t.events);
+  if (!turns.length) { renderEmptyState(); return; }
+  if (windowFromTurn > turns.length) windowFromTurn = Math.max(0, turns.length - WINDOW_TURNS);
+  if (windowFromTurn > 0) {
+    const pill = document.createElement("button");
+    pill.className = "earlier";
+    pill.textContent = "↑ Show earlier (" + windowFromTurn + ")";
+    pill.onclick = loadEarlier;
+    chat.appendChild(pill);
+  }
+  for (let i = windowFromTurn; i < turns.length; i++) {
+    turns[i].forEach((ev) => renderEvent(ev));
+  }
+  if (keepScroll) chat.scrollTop = Math.max(0, chat.scrollHeight - prevH + prevTop);
+  else scrollBottom();
+}
+
+function loadEarlier() {
+  const t = activeTab(); if (!t || windowFromTurn === 0) return;
+  windowFromTurn = Math.max(0, windowFromTurn - EARLIER_CHUNK);
+  renderWindow(t, true);  // keep the viewport on the same content
+}
+
 function switchTab(id) {
   const t = getTab(id); if (!t) return;
   activeId = id;
   STATE = t;
-  stopSpin(); currentTimeline = null;
-  $("chat").innerHTML = "";
-  (t.events || []).forEach((ev) => renderEvent(ev));
+  windowFromTurn = Math.max(0, splitTurns(t.events).length - WINDOW_TURNS);
+  renderWindow(t, false);
   syncDockToTab(t);
   renderTabs();
-  scrollBottom();
+  updateSendButton();
 }
 
 // Styled in-UI confirm modal (no native window.confirm — keeps the aesthetic).
@@ -355,13 +511,30 @@ function renderTabs() {
 function syncDockToTab(t) {
   applyModelLabel();
   $$("#seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === t.mode));
-  const oc = $("opt-compact"); if (oc) oc.checked = !!t.compact;
+  syncCompactToggle();
+}
+
+// Compact prompt is automatic for LOCAL providers — show it checked + locked.
+function syncCompactToggle() {
+  const oc = $("opt-compact"); if (!oc || !STATE) return;
+  const isLocal = STATE.provider === "LOCAL";
+  oc.checked = isLocal ? true : !!STATE.compact;
+  oc.disabled = isLocal;
+  const lbl = oc.closest(".toggle");
+  if (lbl) lbl.classList.toggle("auto", isLocal);
+}
+
+// Keep only the last PERSIST_CAP_TURNS turns on disk (unbounded chats are wasteful).
+function capEvents(events) {
+  const turns = splitTurns(events);
+  if (turns.length <= PERSIST_CAP_TURNS) return events;
+  return turns.slice(turns.length - PERSIST_CAP_TURNS).reduce((a, t) => a.concat(t), []);
 }
 
 function persist() {
   if (!pybridge) return;
   const data = {
-    tabs: TABS.map((t) => ({ id: t.id, title: t.title, provider: t.provider, model: t.model, mode: t.mode, compact: t.compact, events: t.events })),
+    tabs: TABS.map((t) => ({ id: t.id, title: t.title, provider: t.provider, model: t.model, mode: t.mode, compact: t.compact, events: capEvents(t.events) })),
     active: activeId,
   };
   try { pybridge.save_tabs(JSON.stringify(data)); } catch (e) { /* ignore */ }
@@ -452,6 +625,7 @@ function selectModel(prov, m) {
   if (!STATE) return;
   STATE.provider = prov; STATE.model = m;
   applyModelLabel();
+  syncCompactToggle();
   if (pybridge) pybridge.set_model(prov, m);
   persist();
   closePop();
@@ -466,6 +640,123 @@ function requestModels(prov) {
   if (prov === "LOCAL") window.veraChat.dispatch({ type: "models", provider: "LOCAL", status: "online", models: ["qwen2.5-coder-32b-instruct", "llama-3.3-70b-instruct"] });
 }
 
+// ============================================================================
+// / slash command menu + empty-state suggestions
+// ============================================================================
+const SUGGESTIONS = [
+  "List all actors in the current level",
+  "Make the scene cyberpunk",
+  "What's missing in this project?",
+  "Find assets named boss",
+];
+
+function slashOpen() { return $("slash").classList.contains("open"); }
+function closeSlash() { $("slash").classList.remove("open"); slashState = null; }
+
+function refreshSlash() {
+  const v = $("input").value;
+  if (v.startsWith("/")) {
+    if (slashState && slashState.level === 2) slashState = null;
+    renderSlash();
+  } else if (slashState && slashState.level === 2 && v.startsWith(slashState.cmd.name + " ")) {
+    renderSlash();
+  } else {
+    closeSlash();
+  }
+}
+
+function renderSlash() {
+  const el = $("slash");
+  el.innerHTML = "";
+  // level 2: enum values for a chosen command
+  if (slashState && slashState.level === 2) {
+    const cmd = slashState.cmd;
+    const enumArg = cmd.args.find((a) => a.enum && a.enum.length);
+    const tail = $("input").value.slice(cmd.name.length + 1).trim().toLowerCase();
+    const vals = (enumArg ? enumArg.enum : []).filter((x) => !tail || x.toLowerCase().includes(tail));
+    slashState.items = vals;
+    if (slashState.idx >= vals.length) slashState.idx = 0;
+    const head = document.createElement("div"); head.className = "slash-head";
+    head.textContent = cmd.name + " · " + (enumArg ? enumArg.name : "value");
+    el.appendChild(head);
+    vals.forEach((v, i) => {
+      const it = document.createElement("div");
+      it.className = "slash-item" + (i === slashState.idx ? " on" : "");
+      const nm = document.createElement("span"); nm.className = "s-cmd"; nm.textContent = v;
+      it.appendChild(nm);
+      it.onmousedown = (ev) => { ev.preventDefault(); pickEnum(v); };
+      el.appendChild(it);
+    });
+    if (!vals.length) { const e0 = document.createElement("div"); e0.className = "slash-empty"; e0.textContent = "type a value…"; el.appendChild(e0); }
+    el.classList.add("open");
+    return;
+  }
+  // level 1: commands filtered by the text after "/"
+  const f = $("input").value.slice(1).toLowerCase();
+  const items = COMMANDS.filter((c) =>
+    !f || c.name.toLowerCase().includes(f) || (c.desc || "").toLowerCase().includes(f) || (c.plugin || "").toLowerCase().includes(f)
+  ).slice(0, 40);
+  const prevIdx = slashState ? slashState.idx : 0;
+  slashState = { level: 1, items, idx: Math.min(prevIdx, Math.max(0, items.length - 1)), cmd: null };
+  if (!items.length) {
+    const e0 = document.createElement("div"); e0.className = "slash-empty"; e0.textContent = "no command matches";
+    el.appendChild(e0); el.classList.add("open"); return;
+  }
+  items.forEach((c, i) => {
+    const it = document.createElement("div");
+    it.className = "slash-item" + (i === slashState.idx ? " on" : "");
+    const nm = document.createElement("span"); nm.className = "s-cmd"; nm.textContent = c.name;
+    if (c.plugin) { const b = document.createElement("span"); b.className = "s-plug"; b.textContent = c.plugin; nm.appendChild(b); }
+    const ds = document.createElement("span"); ds.className = "s-desc"; ds.textContent = c.desc || "";
+    it.appendChild(nm); it.appendChild(ds);
+    it.onmousedown = (ev) => { ev.preventDefault(); pickCommand(c); };
+    el.appendChild(it);
+  });
+  el.classList.add("open");
+}
+
+function pickCommand(c) {
+  const enumArg = c.args && c.args.find((a) => a.enum && a.enum.length);
+  $("input").value = c.name + " ";
+  if (enumArg) { slashState = { level: 2, cmd: c, items: enumArg.enum, idx: 0 }; renderSlash(); }
+  else closeSlash();
+  $("input").focus();
+}
+function pickEnum(v) {
+  $("input").value = slashState.cmd.name + " " + v;
+  closeSlash();
+  $("input").focus();
+}
+function slashSelect() {
+  if (!slashState) return false;
+  const item = slashState.items[slashState.idx];
+  if (item === undefined) return false;
+  if (slashState.level === 2) pickEnum(item); else pickCommand(item);
+  return true;
+}
+function slashMove(d) {
+  if (!slashState || !slashState.items.length) return;
+  slashState.idx = (slashState.idx + d + slashState.items.length) % slashState.items.length;
+  renderSlash();
+}
+
+function renderEmptyState() {
+  const chat = $("chat");
+  const wrap = document.createElement("div"); wrap.className = "empty-state";
+  const ic = document.createElement("span"); ic.innerHTML = VLOGO;
+  if (ic.firstChild) { ic.firstChild.classList.add("es-logo"); wrap.appendChild(ic.firstChild); }
+  const h = document.createElement("div"); h.className = "es-title"; h.textContent = "What are we building?"; wrap.appendChild(h);
+  const hint = document.createElement("div"); hint.className = "es-hint"; hint.textContent = "Type / for commands, or try:"; wrap.appendChild(hint);
+  const chips = document.createElement("div"); chips.className = "es-chips";
+  SUGGESTIONS.forEach((s) => {
+    const c = document.createElement("button"); c.className = "es-chip"; c.textContent = s;
+    c.onclick = () => { $("input").value = s; $("input").focus(); };
+    chips.appendChild(c);
+  });
+  wrap.appendChild(chips);
+  chat.appendChild(wrap);
+}
+
 // ---------- setup ----------
 function applyProviderStatus(prov, status, detail) {
   const st = $("st-" + prov); if (!st) return;
@@ -473,7 +764,7 @@ function applyProviderStatus(prov, status, detail) {
     case "ok": case "configured": st.className = "st ok"; st.textContent = "● configured"; break;
     case "online": case "local": st.className = "st live"; st.textContent = "● online"; break;
     case "offline": st.className = "st no"; st.textContent = "○ offline"; break;
-    case "missing_key": case "off": st.className = "st no"; st.textContent = "○ not configured"; break;
+    case "missing_key": case "not_configured": case "off": st.className = "st no"; st.textContent = "○ not configured"; break;
     case "err": st.className = "st err"; st.textContent = "✕ " + (detail || "error"); break;
     default: if (status) { st.className = "st no"; st.textContent = "○ " + status; }
   }
@@ -551,6 +842,12 @@ function wireControls() {
   $("setup-x").onclick = closeSetup;
   $("scrim").onclick = closeSetup;
 
+  // setup inner tabs: Settings | Plugins
+  $$(".s-tab").forEach((t) => t.onclick = () => {
+    $$(".s-tab").forEach((x) => x.classList.toggle("on", x === t));
+    $$(".s-pane").forEach((p) => { p.hidden = p.dataset.pane !== t.dataset.pane; });
+  });
+
   $("lm-detect").onclick = function () {
     this.textContent = "…";
     if (pybridge) pybridge.list_models("LOCAL"); else requestModels("LOCAL");
@@ -571,19 +868,103 @@ function wireControls() {
 function sendCurrent() {
   const text = $("input").value.trim();
   if (!text || !STATE) return;
+  const image = pendingImage;
   $("input").value = ""; $("input").style.height = "auto";
   pendingId = activeId;
-  window.veraChat.dispatch({ type: "user", msg: text });
+  updateSendButton();
+  window.veraChat.dispatch({ type: "user", msg: text, image: image });
   if (pybridge) {
     pybridge.set_compact(!!STATE.compact);
-    pybridge.send_command(text, STATE.provider, STATE.model, STATE.mode, STATE.id);
+    pybridge.send_command(text, STATE.provider, STATE.model, STATE.mode, STATE.id,
+                          image ? JSON.stringify(image) : "");
   }
+  clearPendingImage();
+}
+
+// ---------- image attachment (paste / drop a reference) ----------
+function setPendingImage(media_type, data) { pendingImage = { media_type, data }; renderAttach(); }
+function clearPendingImage() { pendingImage = null; renderAttach(); }
+
+function renderAttach() {
+  let box = $("attach");
+  if (!box) {
+    box = document.createElement("div"); box.id = "attach";
+    const bar = $("bar"); bar.insertBefore(box, bar.querySelector(".bar-ctl"));
+  }
+  box.innerHTML = "";
+  if (!pendingImage) { box.style.display = "none"; return; }
+  box.style.display = "flex";
+  const img = document.createElement("img"); img.className = "attach-thumb";
+  img.src = "data:" + pendingImage.media_type + ";base64," + pendingImage.data;
+  const x = document.createElement("button"); x.className = "attach-x"; x.textContent = "✕"; x.title = "Remove";
+  x.onclick = clearPendingImage;
+  const lbl = document.createElement("span"); lbl.className = "attach-lbl"; lbl.textContent = "reference attached";
+  box.appendChild(img); box.appendChild(lbl); box.appendChild(x);
+}
+
+function fileToImage(file) {
+  if (!file || !/^image\//.test(file.type || "")) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const m = /^data:(image\/[\w.+-]+);base64,(.*)$/.exec(String(reader.result));
+    if (m) {
+      let mt = m[1] === "image/jpg" ? "image/jpeg" : m[1];
+      if (mt !== "image/png" && mt !== "image/jpeg") mt = "image/png";
+      setPendingImage(mt, m[2]);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function doStop() {
+  if (pybridge) pybridge.stop();
+  // the backend emits a final {status:"stopped"} which clears the running state
+}
+
+// The send button doubles as a Stop button while THIS tab is running.
+function updateSendButton() {
+  const btn = $("send"); if (!btn) return;
+  const running = pendingId !== null && pendingId === activeId;
+  btn.classList.toggle("stop", running);
+  btn.textContent = running ? "■" : "➤";
+  btn.title = running ? "Stop" : "Send";
 }
 
 function wireInput() {
-  $("send").onclick = sendCurrent;
-  $("input").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendCurrent(); } });
-  $("input").addEventListener("input", function () { this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 120) + "px"; });
+  $("send").onclick = () => {
+    (pendingId !== null && pendingId === activeId) ? doStop() : sendCurrent();
+  };
+  $("input").addEventListener("keydown", (ev) => {
+    if (slashOpen()) {
+      if (ev.key === "ArrowDown") { ev.preventDefault(); slashMove(1); return; }
+      if (ev.key === "ArrowUp") { ev.preventDefault(); slashMove(-1); return; }
+      if (ev.key === "Escape") { ev.preventDefault(); closeSlash(); return; }
+      if (ev.key === "Tab" || (ev.key === "Enter" && slashState && slashState.level === 1)) { ev.preventDefault(); slashSelect(); return; }
+    }
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendCurrent(); }
+  });
+  $("input").addEventListener("input", function () {
+    this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 120) + "px";
+    refreshSlash();
+  });
+  $("input").addEventListener("blur", () => setTimeout(closeSlash, 150));
+
+  // paste an image into the input
+  $("input").addEventListener("paste", (ev) => {
+    const items = (ev.clipboardData && ev.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.type && it.type.startsWith("image/")) { fileToImage(it.getAsFile()); ev.preventDefault(); break; }
+    }
+  });
+  // drag & drop an image onto the dock
+  const bar = $("bar");
+  bar.addEventListener("dragover", (ev) => { ev.preventDefault(); bar.classList.add("drag"); });
+  bar.addEventListener("dragleave", () => bar.classList.remove("drag"));
+  bar.addEventListener("drop", (ev) => {
+    ev.preventDefault(); bar.classList.remove("drag");
+    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (f) fileToImage(f);
+  });
 }
 
 // ============================================================================
@@ -592,6 +973,10 @@ function wireInput() {
 function boot() {
   wireControls();
   wireInput();
+  // reverse infinite scroll: near the top, load the previous chunk of turns
+  $("chat").addEventListener("scroll", () => {
+    if ($("chat").scrollTop < 40 && windowFromTurn > 0) loadEarlier();
+  });
   // always start with one tab; restore_tabs replaces it if there's saved state
   const t = newTab({ title: "New chat" });
   switchTab(t.id);
@@ -604,6 +989,7 @@ function boot() {
       pybridge.providers();
       pybridge.list_models("LOCAL");
       pybridge.plugins();
+      pybridge.commands();
     });
   } else {
     requestModels("LOCAL");

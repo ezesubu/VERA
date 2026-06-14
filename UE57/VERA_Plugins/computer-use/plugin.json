@@ -1,0 +1,9 @@
+{
+  "name": "Computer Use",
+  "version": "1.0.0",
+  "author": "VERA",
+  "description": "Last-resort screen control for editor UI that has no Python API: screenshot the screen so VERA can see it, and click at coordinates. Fragile and needs the editor in the foreground — prefer dedicated tools and the unreal API; use this only when nothing else can reach a panel or dialog.",
+  "enabled": false,
+  "deps": ["pyautogui>=0.9.54", "Pillow>=10.0.0"],
+  "deps_import": "pyautogui"
+}
