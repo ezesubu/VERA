@@ -1,4 +1,4 @@
-dale<div align="center">
+<div align="center">
 
 ![VERA — Virtual Engine Reasoning Agent](docs/images/fab-01-hero.jpg)
 
