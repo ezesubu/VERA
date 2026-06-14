@@ -16,6 +16,8 @@ and verifies its own work — powered by the brain *you* choose (cloud or fully 
 
 </div>
 
+> _Why did we build it? Because pasting LLM snippets into Unreal and praying isn't a workflow — and because the Auto-Fixer turned out cheaper than a new keyboard. 🧱⌨️_
+
 > _A 10-second GIF of VERA working belongs right here — record one from the editor and drop it in `docs/images/`._
 
 ---
