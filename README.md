@@ -85,7 +85,7 @@ an **agent**: you ask in plain language, and it *plans*, *calls the tools it nee
 ## The brain — bring your own LLM
 
 <div align="center">
-  <img src="docs/images/VeraLiveLocalQwen25.png" alt="VERA running locally with Qwen" width="800" />
+  <img width="2123" height="1010" alt="VeraLiveLocalQwen25" src="https://github.com/user-attachments/assets/cb1ae942-6101-4961-84fd-1cfd3f2e93c8" />
 </div>
 
 VERA speaks the **OpenAI `/v1` standard**, so it works with essentially any backend:
@@ -144,7 +144,8 @@ visually verify** pipeline, driven entirely from chat.
 
 <div align="center">
 
-![VERA Plugins](docs/images/fab-02-plugins.jpg)
+<img width="1920" height="1080" alt="fab-02-plugins" src="https://github.com/user-attachments/assets/621657bf-c451-44ae-81cb-30cfc45b0240" />
+
 
 </div>
 
@@ -192,7 +193,10 @@ Drop the folder in `VERA_Plugins/`, toggle it on in the **Plugins** tab — done
 ## MCP — drive the editor from your IDE
 
 <div align="center">
-  <img src="docs/images/AngravityIDELive.png" alt="Driving Unreal from Antigravity IDE" width="800" />
+ <img width="2252" height="946" alt="ClaudeLive" src="https://github.com/user-attachments/assets/2bb82085-699d-44e5-8113-99cedbeb0f7e" />
+ <img width="2254" height="980" alt="ClaudeLive2" src="https://github.com/user-attachments/assets/654b925a-6db1-4b61-9241-9328b65338c9" />
+ <img width="2302" height="1013" alt="AngravityIDELive" src="https://github.com/user-attachments/assets/0ea511b1-7c6c-432e-9dac-0a98e613c878" />
+
 </div>
 
 VERA ships an [MCP](https://modelcontextprotocol.io) server, so the AI in **your
@@ -359,7 +363,8 @@ never leave your machine.
 
 <div align="center">
 
-![Support VERA](docs/images/fab-03-support.jpg)
+<img width="1920" height="1080" alt="fab-03-support" src="https://github.com/user-attachments/assets/574d9009-8baa-41a2-9934-6e149aea8cd5" />
+
 
 </div>
 
@@ -385,6 +390,8 @@ identity [**@ezesubu**](https://github.com/ezesubu). ⚡🌑
 - **Antigravity (Gemini)** — Lead Artist & Infrastructure
 
 > _Come to the dark side. We have agents._
+
+<img width="665" height="706" alt="VeraInitChat" src="https://github.com/user-attachments/assets/de6c8cc9-a60f-4c8b-bf13-909c4912e6ed" />
 
 <div align="center">
 <sub>built by <b>maVERAick</b> · <i>the agents thank you ◇</i></sub>
