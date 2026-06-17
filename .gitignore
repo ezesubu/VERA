@@ -65,5 +65,5 @@ start_vera_autopilot.py
 legacy/
 
 # Media that is now hosted on GitHub CDN
-docs/videos/
+docs/
 *.mp4
