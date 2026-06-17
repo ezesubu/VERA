@@ -16,24 +16,24 @@ registry/ue5_coords.json
 .DS_Store
 Thumbs.db
 
-# --- Unreal Engine (proyecto UE57) ---
+# --- Unreal Engine (UE57 project) ---
 UE57/Saved/
 UE57/Intermediate/
 UE57/Binaries/
 UE57/DerivedDataCache/
 UE57/.vs/
 UE57/*.sln
-# Ignorar todo el Content generado/descargado excepto el código fuente Python:
+# Ignore all generated/downloaded Content except Python source code:
 UE57/Content/*
 !UE57/Content/Python/
 
-# Ignorar los scripts sueltos de experimentos que no son VERA
+# Ignore loose experimental scripts that are not VERA
 UE57/Content/Python/vera_autopilot.py
 UE57/Content/Python/vera_enemy.py
 UE57/Content/Python/vera_horror.py
 UE57/Content/Python/vera_lava.py
 
-# Ignorar configuración de motor
+# Ignore engine configuration
 UE57.uproject
 UE57/Config/
 UE57/Plugins/

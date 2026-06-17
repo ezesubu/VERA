@@ -221,6 +221,19 @@ def list_tool_specs() -> list[dict]:
             registry.register(tool)
             tool_plugin[tool.name] = plugin.name
 
+    # Inyectar herramientas de Epic MCP
+    try:
+        from vera.mcp_client import EpicMCPClient
+        epic_mcp = EpicMCPClient(_repo_root())
+        if epic_mcp.connect():
+            for t in epic_mcp.discover_tools():
+                if t.name not in registry._tools:
+                    registry.register(t)
+                    tool_plugin[t.name] = "Epic MCP"
+            # No cerramos epic_mcp aquí para que las herramientas listadas mantengan la sesión
+    except Exception as e:
+        logger.warning(f"[factory] Error al listar herramientas de Epic MCP: {e}")
+
     specs: list[dict] = []
     for tool in registry.all():
         schema = tool.input_schema or {}
@@ -281,6 +294,19 @@ def build_agent_loop(
             registry.discover_classes(plugin.tool_classes)
         except ValueError as e:  # name clash with a core/other tool: skip, keep going
             logger.warning("[factory] plugin %r tool clash: %s", plugin.id, e)
+
+    # Inyectar herramientas de Epic MCP
+    try:
+        from vera.mcp_client import EpicMCPClient
+        epic_mcp = EpicMCPClient(_repo_root())
+        if epic_mcp.connect():
+            for t in epic_mcp.discover_tools():
+                try:
+                    registry.register(t)
+                except ValueError as e:
+                    logger.warning("[factory] epic mcp tool clash: %s", e)
+    except Exception as e:
+        logger.warning(f"[factory] Error al conectar a Epic MCP: {e}")
 
     base = COMPACT_SYSTEM_PROMPT if compact else SYSTEM_PROMPT
     system = _build_system_prompt(base, enabled_plugins, compact=compact)
