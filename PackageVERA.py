@@ -123,10 +123,10 @@ def assemble_plugin(bundle_deps=True):
     # 1) editor scripts + chat UI (init_unreal, vera_ui, vera_bootstrap, vera_chat/, ...)
     shutil.copytree(src_py, dst_py, ignore=_PY_IGNORE, dirs_exist_ok=True)
     # 2) the vera/ Python package (importable: UE puts Content/Python on sys.path)
-    shutil.copytree(vera_pkg, os.path.join(dst_py, "vera"), ignore=_PY_IGNORE)
+    shutil.copytree(vera_pkg, os.path.join(dst_py, "vera"), ignore=_PY_IGNORE, dirs_exist_ok=True)
     # 3) the studio plugins (found at <Content/Python>/VERA_Plugins by the factory)
     if os.path.isdir(src_plugins):
-        shutil.copytree(src_plugins, os.path.join(dst_py, "VERA_Plugins"), ignore=_PY_IGNORE)
+        shutil.copytree(src_plugins, os.path.join(dst_py, "VERA_Plugins"), ignore=_PY_IGNORE, dirs_exist_ok=True)
 
     if bundle_deps:
         # Fab wants third-party Python under Content/Python/Lib/site-packages (NOT

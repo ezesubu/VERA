@@ -816,6 +816,14 @@ function renderPlugins(list) {
     return;
   }
   box.innerHTML = "";
+  
+  const total = list.length;
+  const enabledCount = list.filter(p => p.enabled).length;
+  const summary = document.createElement("div");
+  summary.className = "p-summary";
+  summary.innerHTML = `<span class="s-ico">✦</span> <b>${enabledCount}</b> Active <span class="s-sep">/</span> <b>${total}</b> Total`;
+  box.appendChild(summary);
+
   list.forEach((p) => {
     const row = document.createElement("div"); row.className = "plug" + (p.enabled ? "" : " off"); row.dataset.id = p.id;
     const body = document.createElement("div"); body.className = "p-body";
