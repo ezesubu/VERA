@@ -15,6 +15,7 @@ PACKAGED_ROOT = os.path.join(WORKSPACE_DIR, "Packaged")
 # wants another version clones the repo and builds it themselves.
 UE_VERSIONS = {
     "5.7": r"C:\Program Files\Epic Games\UE_5.7",
+    "5.8": r"C:\Program Files\Epic Games\UE_5.8",
 }
 
 def load_uplugin():
@@ -81,6 +82,9 @@ def prune_site_packages(site):
                 removed_dirs += 1
         for f in files:
             if f.lower().endswith(_PRUNE_FILE_EXTS):
+                # Critical exception for PySide6: do NOT delete the Chromium WebEngine process
+                if f.lower() == "qtwebengineprocess.exe":
+                    continue
                 try:
                     os.remove(os.path.join(root, f))
                     removed_files += 1
