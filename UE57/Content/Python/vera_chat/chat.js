@@ -148,6 +148,81 @@ function stopSpin() {
 }
 
 // ============================================================================
+// MCP toolsets — the nested layer behind Epic's 3 meta-tools (expandable rows)
+// ============================================================================
+let __mcpToolsetEls = {};   // toolset name → its (lazy) detail container element
+
+function __escTs(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderMcpToolsets(toolsets) {
+  const list = $("mcp-tools-list");
+  if (!list) return;
+  __mcpToolsetEls = {};
+  list.style.display = "flex";
+  list.style.flexDirection = "column";
+  list.style.gap = "8px";
+
+  if (!toolsets.length) {
+    list.innerHTML = '<div style="color:var(--ink-faint); font-size:12px; padding:8px; font-style: italic;">No toolsets discovered yet. Make sure Unreal Native MCP is running.</div>';
+    return;
+  }
+
+  list.innerHTML = "";
+  toolsets.forEach((ts) => {
+    const row = document.createElement("div");
+    row.style.cssText = "background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;";
+
+    const head = document.createElement("div");
+    head.style.cssText = "display:flex; align-items:flex-start; gap:8px; padding:12px; cursor:pointer;";
+    head.innerHTML =
+      `<span class="ts-chevron" style="color:#788cf0; font-family:monospace; transition:transform .15s ease; margin-top:1px;">▸</span>
+       <div style="flex:1; min-width:0;">
+         <div style="background: rgba(120,140,240,0.1); color:#788cf0; padding:2px 6px; border-radius:4px; font-family:monospace; font-size:11px; display:inline-block;">${__escTs(ts.name)}</div>
+         <div style="color:var(--ink-faint); font-size:12px; line-height:1.4; margin-top:6px;">${__escTs(ts.description) || "No description provided."}</div>
+       </div>`;
+
+    const detail = document.createElement("div");
+    detail.style.cssText = "display:none; padding:0 12px 12px 28px; flex-direction:column; gap:6px;";
+    detail.innerHTML = '<div style="color:var(--ink-faint); font-size:12px; font-style:italic;">Loading functions…</div>';
+    __mcpToolsetEls[ts.name] = detail;
+
+    head.onclick = () => {
+      const open = detail.style.display === "flex";
+      detail.style.display = open ? "none" : "flex";
+      const chev = head.querySelector(".ts-chevron");
+      if (chev) chev.style.transform = open ? "rotate(0deg)" : "rotate(90deg)";
+      // Fetch this toolset's functions the first time it's expanded.
+      if (!open && !detail.dataset.loaded) {
+        detail.dataset.loaded = "1";
+        if (pybridge) pybridge.describe_mcp_toolset(ts.name);
+      }
+    };
+
+    row.appendChild(head);
+    row.appendChild(detail);
+    list.appendChild(row);
+  });
+}
+
+function fillMcpToolsetDetail(toolsetName, tools) {
+  const detail = __mcpToolsetEls[toolsetName];
+  if (!detail) return;
+  if (!tools.length) {
+    detail.innerHTML = '<div style="color:var(--ink-faint); font-size:12px; font-style:italic;">No functions reported.</div>';
+    return;
+  }
+  detail.innerHTML = tools.map((f) =>
+    `<div style="border-left:2px solid rgba(120,140,240,0.3); padding:4px 0 4px 10px;">
+       <div style="color:#9db0ff; font-family:monospace; font-size:11px;">/${__escTs(f.name)}</div>
+       <div style="color:var(--ink-faint); font-size:11px; line-height:1.4; margin-top:2px;">${__escTs(f.description)}</div>
+     </div>`
+  ).join("");
+}
+
+// ============================================================================
 // dispatch — single Python→JS entry point
 // ============================================================================
 window.veraChat = {
@@ -216,7 +291,36 @@ window.veraChat = {
         if ($("lm-timeout") && e.timeout_s) $("lm-timeout").value = Math.round(e.timeout_s / 60);
         return;
       }
-      case "commands": { COMMANDS = e.commands || []; if (slashState) renderSlash(); return; }
+      case "mcp_settings": {
+        const st = $("st-UE-MCP");
+        const urlInp = $("mcp-url-path");
+        const portInp = $("mcp-port");
+        if (!st) return;
+        if (!e.installed) {
+           st.className = "st err"; st.textContent = "✕ Not Detected";
+        } else {
+           st.className = "st ok"; st.textContent = "● Settings Loaded";
+           if (urlInp) urlInp.textContent = e.url_path || "/mcp";
+           if (portInp) portInp.textContent = e.port || 8000;
+        }
+        // The toolset list is owned by the "mcp_toolsets" event (the nested layer
+        // behind Epic's 3 meta-tools), populated by get_unreal_mcp_toolsets().
+        return;
+      }
+      case "mcp_toolsets": {
+        renderMcpToolsets(e.toolsets || []);
+        return;
+      }
+      case "mcp_toolset_detail": {
+        fillMcpToolsetDetail(e.toolset, e.tools || []);
+        return;
+      }
+      case "commands": {
+        COMMANDS = e.commands || [];
+        if (slashState) renderSlash();
+        // (#mcp-tools-list is populated by the mcp_toolsets event, not here.)
+        return;
+      }
       case "history": { (e.events || []).forEach((ev) => window.veraChat.dispatch(ev)); return; }
     }
 
@@ -871,10 +975,14 @@ function wireControls() {
   $("setup-x").onclick = closeSetup;
   $("scrim").onclick = closeSetup;
 
-  // setup inner tabs: Settings | Plugins
+  // setup inner tabs: Settings | Plugins | MCP
   $$(".s-tab").forEach((t) => t.onclick = () => {
     $$(".s-tab").forEach((x) => x.classList.toggle("on", x === t));
     $$(".s-pane").forEach((p) => { p.hidden = p.dataset.pane !== t.dataset.pane; });
+    if (t.dataset.pane === "mcp" && pybridge) {
+      pybridge.get_unreal_mcp_settings();
+      pybridge.get_unreal_mcp_toolsets();
+    }
   });
 
   $("lm-detect").onclick = function () {
@@ -896,6 +1004,8 @@ function wireControls() {
 
   const oc = $("opt-compact");
   if (oc) oc.onchange = () => { if (STATE) { STATE.compact = oc.checked; persist(); } if (pybridge) pybridge.set_compact(oc.checked); };
+
+
 }
 
 function sendCurrent() {

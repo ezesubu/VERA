@@ -77,6 +77,93 @@ CONFIRM_UI_TIMEOUT = 290.0     # a bit under the server's 300s gate timeout
 global_vera_window = None
 
 
+# ---------- Epic native MCP toolset discovery ----------
+# Unreal 5.8 exposes only 3 meta-tools at the top level (list_toolsets,
+# describe_toolset, call_tool); the real toolsets live one level down. These
+# pure helpers fetch and shape that nested layer for the MCP settings panel.
+
+def _read_mcp_url():
+    """Resolve the MCP server URL. Reads Unreal's settings CDO, so this MUST be
+    called on the game thread (never from a worker). Falls back to the default."""
+    url = "http://127.0.0.1:8000/mcp"
+    try:
+        if hasattr(unreal, "ModelContextProtocolSettings"):
+            s = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+            port = getattr(s, "server_port_number", 8000)
+            path = getattr(s, "server_url_path", "/mcp")
+            url = f"http://127.0.0.1:{port}{path}"
+    except Exception:
+        pass
+    return url
+
+
+def _epic_mcp_tools(url=None):
+    """Returns {tool_name: Tool} from a freshly connected Epic MCP client, or {}
+    if Unreal's MCP server isn't reachable. Network only — safe on a worker
+    thread because the url is passed in (no `unreal` API touched here)."""
+    try:
+        from vera.mcp_client import EpicMCPClient
+        client = EpicMCPClient(None)
+        if url:
+            client.url = url
+        if not client.connect(probe_settings=(url is None)):
+            return {}
+        return {t.name: t for t in client.discover_tools()}
+    except Exception:
+        return {}
+
+
+def _parse_toolset_list(text):
+    """`list_toolsets` returns lines like '- Name: description'; a description may
+    wrap onto unprefixed continuation lines. Fold them into {name, description}."""
+    toolsets = []
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("- "):
+            name, _, desc = line[2:].partition(":")
+            toolsets.append({"name": name.strip(), "description": desc.strip()})
+        elif line.strip() and toolsets:
+            toolsets[-1]["description"] = (
+                toolsets[-1]["description"] + " " + line.strip()).strip()
+    return toolsets
+
+
+def fetch_mcp_toolsets(url=None):
+    """List of {name, description} for every toolset registered in Unreal's MCP."""
+    tools = _epic_mcp_tools(url)
+    lt = tools.get("list_toolsets")
+    if not lt:
+        return []
+    res = lt.execute({}, None)
+    if getattr(res, "is_error", False):
+        return []
+    return _parse_toolset_list(getattr(res, "content", "") or "")
+
+
+def _describe_mcp_toolset(toolset_name, url=None):
+    """List of {name, full, description} for the functions inside one toolset."""
+    tools = _epic_mcp_tools(url)
+    dt = tools.get("describe_toolset")
+    if not dt:
+        return []
+    res = dt.execute({"toolset_name": toolset_name}, None)
+    if getattr(res, "is_error", False):
+        return []
+    try:
+        data = json.loads(getattr(res, "content", "") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    funcs = []
+    for fn in data.get("tools", []):
+        full = fn.get("name", "")
+        funcs.append({
+            "name": full.split(".")[-1] if full else full,
+            "full": full,
+            "description": (fn.get("description") or "").strip(),
+        })
+    return funcs
+
+
 def module_level_tick_qt(delta_time):
     """Global tick (registered once): pumps Qt and drains events toward JS (WebEngine),
     and also drains _pending_vera_responses for the bubble fallback."""
@@ -184,6 +271,64 @@ class PyBridge(QObject):
     @Slot(str)
     def save_tabs(self, data_json):
         self._window.save_tabs(data_json)
+
+    # ---- unreal mcp settings ----
+    @Slot()
+    def get_unreal_mcp_settings(self):
+        url_path = "/mcp"
+        port = 8000
+        try:
+            import unreal
+            if hasattr(unreal, "ModelContextProtocolSettings"):
+                settings = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+                url_path = getattr(settings, "server_url_path", url_path)
+                port = getattr(settings, "server_port_number", port)
+        except Exception as e:
+            pass # Ignore if the class isn't exposed to Python
+            
+        payload = {
+            "type": "mcp_settings",
+            "installed": True,
+            "url_path": url_path,
+            "port": port
+        }
+        _pending_events.append(payload)
+
+    # ---- unreal mcp toolsets (the nested layer behind list_toolsets) ----
+    # These do blocking network I/O, so the work runs on a daemon thread and the
+    # result is delivered via _pending_events (drained by the Qt tick). The slot
+    # itself returns instantly — otherwise the editor's game thread would freeze.
+    # The MCP url is resolved here (game thread) and handed to the worker, which
+    # must never touch the `unreal` API.
+    @Slot()
+    def get_unreal_mcp_toolsets(self):
+        url = _read_mcp_url()
+
+        def _work():
+            try:
+                toolsets = fetch_mcp_toolsets(url)
+            except Exception:
+                toolsets = []
+            _pending_events.append({"type": "mcp_toolsets", "toolsets": toolsets})
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    @Slot(str)
+    def describe_mcp_toolset(self, toolset_name):
+        url = _read_mcp_url()
+
+        def _work():
+            try:
+                funcs = _describe_mcp_toolset(toolset_name, url)
+            except Exception:
+                funcs = []
+            _pending_events.append({
+                "type": "mcp_toolset_detail",
+                "toolset": toolset_name,
+                "tools": funcs,
+            })
+
+        threading.Thread(target=_work, daemon=True).start()
 
     # ---- stop / cancel the running command ----
     @Slot()

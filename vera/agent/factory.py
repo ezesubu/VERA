@@ -221,6 +221,18 @@ def list_tool_specs() -> list[dict]:
             registry.register(tool)
             tool_plugin[tool.name] = plugin.name
 
+    # Inject Epic MCP tools natively running in 5.8
+    try:
+        from vera.mcp_client import EpicMCPClient
+        epic_mcp = EpicMCPClient(_repo_root())
+        if epic_mcp.connect():
+            for t in epic_mcp.discover_tools():
+                if t.name not in registry._tools:
+                    registry.register(t)
+                    tool_plugin[t.name] = "Epic MCP"
+    except Exception as e:
+        logger.error(f"Failed to load Epic MCP Client: {e}")
+
     specs: list[dict] = []
     for tool in registry.all():
         schema = tool.input_schema or {}
@@ -281,6 +293,17 @@ def build_agent_loop(
             registry.discover_classes(plugin.tool_classes)
         except ValueError as e:  # name clash with a core/other tool: skip, keep going
             logger.warning("[factory] plugin %r tool clash: %s", plugin.id, e)
+
+    # Inject Epic MCP tools natively running in 5.8
+    try:
+        from vera.mcp_client import EpicMCPClient
+        epic_mcp = EpicMCPClient(_repo_root())
+        if epic_mcp.connect():
+            for t in epic_mcp.discover_tools():
+                if t.name not in registry._tools:
+                    registry.register(t)
+    except Exception as e:
+        logger.warning("[factory] Epic MCP Client failed to connect: %s", e)
 
     base = COMPACT_SYSTEM_PROMPT if compact else SYSTEM_PROMPT
     system = _build_system_prompt(base, enabled_plugins, compact=compact)
