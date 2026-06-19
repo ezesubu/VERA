@@ -39,6 +39,23 @@ UE57/Config/
 UE57/Plugins/
 UE57/*.png
 
+# --- Unreal Engine (UE58/TestMPC project) ---
+UE58/TestMPC/Saved/
+UE58/TestMPC/Intermediate/
+UE58/TestMPC/Binaries/
+UE58/TestMPC/DerivedDataCache/
+UE58/TestMPC/.vs/
+UE58/TestMPC/*.sln
+UE58/TestMPC/Content/*
+!UE58/TestMPC/Content/Python/
+UE58/TestMPC.uproject
+UE58/TestMPC/Config/
+UE58/TestMPC/Plugins/
+UE58/TestMPC/*.png
+
+# Ignore UE58v1 entirely
+UE58v1/
+
 # --- Not the product: build outputs, vendored deps, experiments ---
 Packaged/
 .ue_deps/

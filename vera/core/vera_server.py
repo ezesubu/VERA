@@ -2,12 +2,15 @@ import json
 import logging
 import os
 import socket
+import sys
 import threading
 
 from vera.agent.factory import make_llm_client
 from vera.agent.models import default_model, default_provider
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# Stream to stdout so VERA logs land in Unreal's Output Log under LogPython
+# instead of being swallowed/flagged as stderr.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER = "ANTHROPIC"

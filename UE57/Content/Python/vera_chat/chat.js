@@ -166,7 +166,17 @@ function renderMcpToolsets(toolsets) {
   list.style.gap = "8px";
 
   if (!toolsets.length) {
-    list.innerHTML = '<div style="color:var(--ink-faint); font-size:12px; padding:8px; font-style: italic;">No toolsets discovered yet. Make sure Unreal Native MCP is running.</div>';
+    list.innerHTML = '<div style="color:var(--ink-faint); font-size:12px; padding:8px; font-style: italic;">No toolsets discovered yet. Make sure Unreal Native MCP is running. <button id="mcp-refresh-btn" style="margin-left:8px; background:rgba(120,140,240,0.1); border:1px solid #788cf0; color:#788cf0; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:11px;">Refresh</button></div>';
+    const btn = document.getElementById("mcp-refresh-btn");
+    if (btn) {
+      btn.onclick = () => {
+        btn.textContent = "Refreshing...";
+        if (pybridge) {
+          list.innerHTML = '<div style="color:var(--teal); font-size:12px; padding:8px; font-style: italic;">Loading Unreal MCP Toolsets...</div>';
+          pybridge.get_unreal_mcp_toolsets();
+        }
+      };
+    }
     return;
   }
 
@@ -205,6 +215,21 @@ function renderMcpToolsets(toolsets) {
     row.appendChild(detail);
     list.appendChild(row);
   });
+
+  // Most toolsets live behind experimental Unreal plugins that ship OFF by
+  // default, so a fresh project shows only one or two. Nudge the user (and
+  // anyone we share the build with) toward enabling more — only when the list
+  // is short, so it disappears once they've turned plenty on.
+  if (toolsets.length < 6) {
+    const hint = document.createElement("div");
+    hint.style.cssText = "color:var(--ink-faint); font-size:11px; line-height:1.5; padding:10px 4px 2px; border-top:1px dashed var(--border); margin-top:4px;";
+    hint.innerHTML =
+      'Seeing only a few? Most toolsets ship in <b style="color:var(--ink)">experimental Unreal plugins</b> '
+      + 'that are off by default. Turn them on in <b style="color:var(--ink)">Edit → Plugins</b> '
+      + '(search <span style="font-family:monospace;color:#788cf0">Toolset</span>: GAS, Physics, PCG, Niagara, '
+      + 'UMG, SemanticSearch…), then restart the editor.';
+    list.appendChild(hint);
+  }
 }
 
 function fillMcpToolsetDetail(toolsetName, tools) {
@@ -293,15 +318,17 @@ window.veraChat = {
       }
       case "mcp_settings": {
         const st = $("st-UE-MCP");
-        const urlInp = $("mcp-url-path");
-        const portInp = $("mcp-port");
         if (!st) return;
         if (!e.installed) {
            st.className = "st err"; st.textContent = "✕ Not Detected";
         } else {
-           st.className = "st ok"; st.textContent = "● Settings Loaded";
-           if (urlInp) urlInp.textContent = e.url_path || "/mcp";
-           if (portInp) portInp.textContent = e.port || 8000;
+           // Minimal status line: state + address inline, e.g. "● CONNECTED · :8000/mcp".
+           // The port/path are read-only here — change them in Unreal Project Settings.
+           const addr = ":" + (e.port || 8000) + (e.url_path || "/mcp");
+           st.className = "st ok";
+           st.innerHTML = "● Connected"
+             + '<span style="text-transform:none;letter-spacing:0;color:var(--ink-faint);font-weight:400"> · '
+             + addr + "</span>";
         }
         // The toolset list is owned by the "mcp_toolsets" event (the nested layer
         // behind Epic's 3 meta-tools), populated by get_unreal_mcp_toolsets().
@@ -980,6 +1007,11 @@ function wireControls() {
     $$(".s-tab").forEach((x) => x.classList.toggle("on", x === t));
     $$(".s-pane").forEach((p) => { p.hidden = p.dataset.pane !== t.dataset.pane; });
     if (t.dataset.pane === "mcp" && pybridge) {
+      const list = $("mcp-tools-list");
+      if (list) {
+        list.style.display = "block";
+        list.innerHTML = '<div style="color:var(--teal); font-size:12px; padding:8px; font-style: italic;">Loading Unreal MCP Toolsets...</div>';
+      }
       pybridge.get_unreal_mcp_settings();
       pybridge.get_unreal_mcp_toolsets();
     }

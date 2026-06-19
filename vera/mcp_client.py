@@ -15,7 +15,7 @@ class EpicMCPClient:
     as mandated by Unreal Engine 5.8's implementation.
     """
     def __init__(self, repo_root: str):
-        self.url = "http://127.0.0.1:8000/mcp" # Fallback default
+        self.url = "http://localhost:8000/mcp" # Fallback default
         self._connected = False
         self._session_id = None
         self._next_id = 1
@@ -111,9 +111,50 @@ class EpicMCPClient:
                     return False
 
                 settings = unreal.get_default_object(cls)
-                port = settings.get_editor_property("ServerPortNumber")
-                url_path = settings.get_editor_property("ServerUrlPath")
-                self.url = f"http://127.0.0.1:{port}{url_path}"
+                port = 8000
+                url_path = "/mcp"
+                for prop in dir(settings):
+                    if "port" in prop.lower():
+                        port = settings.get_editor_property(prop)
+                    elif "path" in prop.lower() or "url" in prop.lower():
+                        url_path = settings.get_editor_property(prop)
+                
+                try:
+                    import vera_ui
+                    if getattr(vera_ui, "_global_custom_mcp_port", None) is not None:
+                        port = vera_ui._global_custom_mcp_port
+                except ImportError:
+                    pass
+                
+                # Epic Bug Workaround: UE 5.8 saves MCP settings to EditorPerProjectUserSettings.ini
+                # but registers the class as an Engine setting, so the CDO never updates on restart.
+                # We explicitly parse the ini file as the source of truth if we suspect stale defaults.
+                if port == 8000:
+                    try:
+                        import os
+                        proj_dir = unreal.SystemLibrary.get_project_directory()
+                        ini_path = os.path.join(proj_dir, "Saved", "Config", "WindowsEditor", "EditorPerProjectUserSettings.ini")
+                        if os.path.exists(ini_path):
+                            with open(ini_path, "rb") as f:
+                                content_bytes = f.read()
+                            # Robustly handle both UTF-8 and UTF-16 by ignoring errors and stripping null bytes
+                            content = content_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
+                            
+                            in_mcp_section = False
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line.startswith("[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]"):
+                                    in_mcp_section = True
+                                elif in_mcp_section and line.startswith("["):
+                                    break
+                                elif in_mcp_section and line.startswith("ServerPortNumber="):
+                                    port = int(line.split("=")[1].strip())
+                                elif in_mcp_section and line.startswith("ServerUrlPath="):
+                                    url_path = line.split("=")[1].strip()
+                    except Exception as ini_err:
+                        logger.warning(f"Failed to parse MCP ini settings: {ini_err}")
+
+                self.url = f"http://localhost:{port}{url_path}"
             except Exception as e:
                 logger.warning(f"Could not read dynamic MCP settings, using fallback: {e}")
 
@@ -212,6 +253,11 @@ class EpicMCPClient:
                             return ToolResult(content=f"Epic MCP Error: {err_msg}", is_error=True)
 
                         result_obj = final_json.get("result", {})
+                        # MCP CallToolResult carries an `isError` flag for tool-level
+                        # failures (bad tool name, script error, ...). Epic returns the
+                        # message as plain text content with isError=true, so without
+                        # honoring this flag the caller can't tell failure from success.
+                        is_error = bool(result_obj.get("isError", False))
                         if "content" in result_obj:
                             content_arr = result_obj["content"]
                             output = []
@@ -223,8 +269,8 @@ class EpicMCPClient:
                             final_text = "\n".join(output) if output else "Success (no output)"
                         else:
                             final_text = json.dumps(result_obj)
-                            
-                        return ToolResult(content=final_text)
+
+                        return ToolResult(content=final_text, is_error=is_error)
                     except Exception as e:
                         return ToolResult(content=f"Epic MCP Execution Error: {e}", is_error=True)
 

@@ -13,8 +13,7 @@ PACKAGED_ROOT = os.path.join(WORKSPACE_DIR, "Packaged")
 
 # Open-source: ship source + one packaged build for the latest UE. Anyone who
 # wants another version clones the repo and builds it themselves.
-UE_VERSIONS = {
-    "5.7": r"C:\Program Files\Epic Games\UE_5.7",
+UE_VERSIONS = {    
     "5.8": r"C:\Program Files\Epic Games\UE_5.8",
 }
 
@@ -43,7 +42,10 @@ _PY_IGNORE = shutil.ignore_patterns(
 
 # Python deps the brain + UI need, bundled into the plugin (Fab forbids runtime
 # pip installs). Targets the editor's Python (3.11) regardless of the host.
-_BUNDLED_DEPS = ["anthropic>=0.40.0", "openai>=1.40.0", "mcp>=1.2.0", "PySide6"]
+# PySide6 must be 6.11.x: 6.7.2's QtWebEngineCore.dll is incompatible with UE 5.8's
+# embedded Qt runtime — `import QtWebEngineWidgets` fails with "procedure not found"
+# and VERA silently falls back to the basic (no-tabs) UI. 6.11.1 matches UE 5.8.
+_BUNDLED_DEPS = ["anthropic>=0.40.0", "openai>=1.40.0", "mcp>=1.2.0", "PySide6==6.11.1"]
 
 # Fab rejects executables and build artifacts inside the plugin, and caps every
 # path at 170 chars. pip pulls these in (console-script .exe, PySide6 qml .obj,
@@ -90,6 +92,51 @@ def prune_site_packages(site):
                     removed_files += 1
                 except OSError:
                     pass
+    # Aggressive PySide6 pruning to reduce package size
+    pyside_dir = os.path.join(site, "PySide6")
+    if os.path.exists(pyside_dir):
+        bloat_prefixes = [
+            "Qt63D", "Qt3D", "Qt6Bluetooth", "QtBluetooth", "Qt6Charts", "QtCharts",
+            "Qt6DataVisualization", "QtDataVisualization", "Qt6Designer", "QtDesigner",
+            "Qt6Location", "QtLocation", "Qt6Multimedia", "QtMultimedia",
+            "Qt6Nfc", "QtNfc", "Qt6Pdf", "QtPdf",
+            # NOTE: do NOT prune Qt6Positioning — Qt6WebEngineCore.dll links it,
+            # so removing it makes `import QtWebEngineWidgets` fail and VERA
+            # silently falls back to the basic (no-tabs) UI.
+            "Qt6Sensors", "QtSensors", "Qt6Serial", "QtSerial", "Qt6SpatialAudio", "QtSpatialAudio",
+            "Qt6VirtualKeyboard", "QtVirtualKeyboard", "Qt6Graphs", "QtGraphs",
+            "Qt6RemoteObjects", "QtRemoteObjects", "Qt6Scxml", "QtScxml",
+            "Qt6StateMachine", "QtStateMachine", "Qt6TextToSpeech", "QtTextToSpeech"
+        ]
+        for f in os.listdir(pyside_dir):
+            path = os.path.join(pyside_dir, f)
+            if any(f.startswith(p) for p in bloat_prefixes):
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+        # The translations/ folder is mostly Qt UI .qm files (bloat), BUT it also
+        # holds translations/qtwebengine_locales/*.pak, which QtWebEngine REQUIRES
+        # at runtime — without en-US.pak the web view fails to initialize and VERA
+        # falls back to the basic (no-tabs) UI. Drop the .qm bloat, keep the
+        # WebEngine locales.
+        translations = os.path.join(pyside_dir, "translations")
+        if os.path.isdir(translations):
+            for entry in os.listdir(translations):
+                if entry == "qtwebengine_locales":
+                    continue
+                p = os.path.join(translations, entry)
+                if os.path.isdir(p):
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
     # console-script .exe wrappers live in bin/; drop it if pruning emptied it
     bin_dir = os.path.join(site, "bin")
     if os.path.isdir(bin_dir) and not os.listdir(bin_dir):
@@ -117,11 +164,16 @@ def assemble_plugin(bundle_deps=True):
     src_py = os.path.join(WORKSPACE_DIR, "UE57", "Content", "Python")
     src_plugins = os.path.join(WORKSPACE_DIR, "UE57", "VERA_Plugins")
     vera_pkg = os.path.join(WORKSPACE_DIR, "vera")
-    dst_py = os.path.join(PLUGIN_DIR, "Content", "Python")
+    dst_content = os.path.join(PLUGIN_DIR, "Content")
+    dst_py = os.path.join(dst_content, "Python")
 
     print(f"[+] Assembling plugin Content/Python from source...")
-    if os.path.exists(dst_py):
-        shutil.rmtree(dst_py)
+    # VERA ships ONLY Python under Content/. Wipe the whole Content/ (not just
+    # Content/Python) so stray game assets — e.g. demo-project content copied in
+    # by mistake — can never leak into the packaged plugin. Fab rejects bundled
+    # sample content, and it bloats the zip by ~1 GB.
+    if os.path.exists(dst_content):
+        shutil.rmtree(dst_content)
     os.makedirs(dst_py, exist_ok=True)
 
     # 1) editor scripts + chat UI (init_unreal, vera_ui, vera_bootstrap, vera_chat/, ...)
@@ -150,7 +202,7 @@ def assemble_plugin(bundle_deps=True):
     print(f"[+] Plugin assembled at {os.path.relpath(dst_py, WORKSPACE_DIR)}")
 
 
-def build_for_version(version, ue_path):
+def build_for_version(version, ue_path, keep_binaries=False):
     run_uat_path = os.path.join(ue_path, "Engine", "Build", "BatchFiles", "RunUAT.bat")
     if not os.path.exists(run_uat_path):
         print(f"[-] RunUAT.bat not found at {run_uat_path}. Skipping version {version}.")
@@ -205,20 +257,28 @@ def build_for_version(version, ue_path):
             
         print(f"[+] Build succeeded for UE {version}!")
         
-        # Clean up Epic Games forbidden directories
-        for folder_to_remove in ["Binaries", "Intermediate", "Saved", "Build"]:
+        # Fab requires NO binaries (Epic recompiles them) — but a build meant for
+        # sharing keeps the compiled Binaries so a recipient on the same engine
+        # version can drop it in WITHOUT a C++ toolchain. Intermediate/Saved/Build
+        # are pure junk either way.
+        forbidden = ["Intermediate", "Saved", "Build"]
+        if not keep_binaries:
+            forbidden.insert(0, "Binaries")
+        for folder_to_remove in forbidden:
             folder_path = os.path.join(output_dir, folder_to_remove)
             if os.path.exists(folder_path):
                 shutil.rmtree(folder_path)
-                print(f"[+] Removed {folder_to_remove} to comply with Fab requirements.")
-                
+                print(f"[+] Removed {folder_to_remove}.")
+
         # Zip the packaged plugin folder
-        zip_path = os.path.join(PACKAGED_ROOT, f"VERA_UE{version}.zip")
+        suffix = "_shareable" if keep_binaries else ""
+        zip_path = os.path.join(PACKAGED_ROOT, f"VERA_UE{version}{suffix}.zip")
         if os.path.exists(zip_path):
             os.remove(zip_path)
-            
+
         zip_directory(output_dir, zip_path)
-        print(f"[+] Created ready-for-Fab ZIP: {zip_path}")
+        label = "shareable (with binaries)" if keep_binaries else "ready-for-Fab"
+        print(f"[+] Created {label} ZIP: {zip_path}")
         return True
 
     except Exception as e:
@@ -244,6 +304,7 @@ def main():
     # Assemble Content/Python from source first, so we always package current code.
     assemble_only = "--assemble-only" in sys.argv
     bundle_deps = "--no-bundle" not in sys.argv
+    keep_binaries = "--shareable" in sys.argv  # keep compiled Binaries for peer sharing
     assemble_plugin(bundle_deps=bundle_deps)
     if assemble_only:
         print("[i] --assemble-only: plugin assembled, stopping before RunUAT.")
@@ -254,7 +315,7 @@ def main():
     
     for version, path in UE_VERSIONS.items():
         if os.path.exists(path):
-            success = build_for_version(version, path)
+            success = build_for_version(version, path, keep_binaries=keep_binaries)
             if success:
                 success_versions.append(version)
             else:
