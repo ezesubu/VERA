@@ -8,8 +8,7 @@ import sys
 # (Unhandled Exception 0x80000003 in Qt6WebEngineCore). Forcing software rendering
 # avoids it. MUST be set before QtWebEngine starts. The chat UI is light, so the
 # cost is negligible.
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
-                      "--disable-gpu --disable-gpu-compositing")
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing --no-sandbox"
 
 # pip dependencies (anthropic, openai, etc.) for the embedded Python 3.11 live in
 # <repo>/.ue_deps (override with VERA_DEPS_DIR). Install with, e.g.:

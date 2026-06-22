@@ -11,12 +11,12 @@ import unreal
 # conflicts with Chromium's and crashes (0x80000003 in Qt6WebEngineCore). Must be
 # set before any WebEngine view is created. init_unreal sets this too; harmless to
 # repeat. The chat UI is light, so software rendering costs nothing noticeable.
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS",
-                      "--disable-gpu --disable-gpu-compositing")
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing --no-sandbox"
 
 # ---------- Qt / WebEngine availability ----------
 HAS_PYSIDE = False
 HAS_WEBENGINE = False
+_WEBENGINE_IMPORT_ERROR = None
 try:
     from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
     from PySide6.QtCore import Qt, QObject, QUrl, Slot
@@ -27,8 +27,12 @@ try:
         from PySide6.QtWebChannel import QWebChannel
         from PySide6.QtGui import QDesktopServices
         HAS_WEBENGINE = True
-    except ImportError:
-        pass
+    except ImportError as e:
+        # Don't swallow this silently — a broken QtWebEngine (e.g. a bundled
+        # PySide6 whose Qt DLLs mismatch the host engine's) drops VERA to the
+        # basic no-tabs UI, and without the real error it's near-impossible to
+        # diagnose. Keep it so we can surface it when the fallback kicks in.
+        _WEBENGINE_IMPORT_ERROR = repr(e)
 except ImportError:
     # PySide6 isn't available yet (it's pip-installed on-demand the first time
     # the UI opens). Define no-op stand-ins so this module can still be IMPORTED
@@ -75,6 +79,132 @@ _pending_vera_responses = []  # responses from the fallback thread → Qt tick �
 _answer_queue = queue.Queue()  # approve/deny answers (JS → stream reader thread)
 CONFIRM_UI_TIMEOUT = 290.0     # a bit under the server's 300s gate timeout
 global_vera_window = None
+
+
+# ---------- Epic native MCP toolset discovery ----------
+# Unreal 5.8 exposes only 3 meta-tools at the top level (list_toolsets,
+# describe_toolset, call_tool); the real toolsets live one level down. These
+# pure helpers fetch and shape that nested layer for the MCP settings panel.
+
+_global_custom_mcp_port = None
+
+def _read_mcp_url():
+    """Reads the path and port from Unreal's ModelContextProtocolSettings to build the URL."""
+    url = "http://127.0.0.1:8000/mcp"
+    try:
+        import unreal
+        if hasattr(unreal, "ModelContextProtocolSettings"):
+            s = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+            port = 8000
+            path = "/mcp"
+            for prop in dir(s):
+                if "port" in prop.lower():
+                    port = s.get_editor_property(prop)
+                elif "path" in prop.lower() or "url" in prop.lower():
+                    path = s.get_editor_property(prop)
+            
+            if _global_custom_mcp_port is not None:
+                port = _global_custom_mcp_port
+                
+            # Epic Bug Workaround: UE 5.8 saves MCP settings to EditorPerProjectUserSettings.ini
+            # but registers the class as an Engine setting, so the CDO never updates on restart.
+            # We explicitly parse the ini file as the source of truth if we suspect stale defaults.
+            elif port == 8000:
+                try:
+                    import os
+                    proj_dir = unreal.SystemLibrary.get_project_directory()
+                    ini_path = os.path.join(proj_dir, "Saved", "Config", "WindowsEditor", "EditorPerProjectUserSettings.ini")
+                    if os.path.exists(ini_path):
+                        with open(ini_path, "rb") as f:
+                            content_bytes = f.read()
+                        # Robustly handle both UTF-8 and UTF-16 by ignoring errors and stripping null bytes
+                        content = content_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
+                        
+                        in_mcp_section = False
+                        for line in content.splitlines():
+                            line = line.strip()
+                            if line.startswith("[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]"):
+                                in_mcp_section = True
+                            elif in_mcp_section and line.startswith("["):
+                                break
+                            elif in_mcp_section and line.startswith("ServerPortNumber="):
+                                port = int(line.split("=")[1].strip())
+                            elif in_mcp_section and line.startswith("ServerUrlPath="):
+                                path = line.split("=")[1].strip()
+                except Exception as ini_err:
+                    unreal.log_warning(f"VERA: Failed to parse MCP ini settings: {ini_err}")
+
+            url = f"http://127.0.0.1:{port}{path}"
+    except Exception:
+        pass
+    return url
+
+
+def _epic_mcp_tools(url=None):
+    """Returns {tool_name: Tool} from a freshly connected Epic MCP client, or {}
+    if Unreal's MCP server isn't reachable. Network only — safe on a worker
+    thread because the url is passed in (no `unreal` API touched here)."""
+    try:
+        from vera.mcp_client import EpicMCPClient
+        client = EpicMCPClient(None)
+        if url:
+            client.url = url
+        if not client.connect(probe_settings=(url is None)):
+            return {}
+        return {t.name: t for t in client.discover_tools()}
+    except Exception:
+        return {}
+
+
+def _parse_toolset_list(text):
+    """`list_toolsets` returns lines like '- Name: description'; a description may
+    wrap onto unprefixed continuation lines. Fold them into {name, description}."""
+    toolsets = []
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("- "):
+            name, _, desc = line[2:].partition(":")
+            toolsets.append({"name": name.strip(), "description": desc.strip()})
+        elif line.strip() and toolsets:
+            toolsets[-1]["description"] = (
+                toolsets[-1]["description"] + " " + line.strip()).strip()
+    return toolsets
+
+
+def fetch_mcp_toolsets(url=None):
+    """List of {name, description} for every toolset registered in Unreal's MCP."""
+    tools = _epic_mcp_tools(url)
+    lt = tools.get("list_toolsets")
+    if not lt:
+        return []
+    res = lt.execute({}, None)
+    if getattr(res, "is_error", False):
+        return []
+    return _parse_toolset_list(getattr(res, "content", "") or "")
+
+
+def _describe_mcp_toolset(toolset_name, url=None):
+    """List of {name, full, description} for the functions inside one toolset."""
+    tools = _epic_mcp_tools(url)
+    dt = tools.get("describe_toolset")
+    if not dt:
+        return []
+    res = dt.execute({"toolset_name": toolset_name}, None)
+    if getattr(res, "is_error", False):
+        return []
+    try:
+        data = json.loads(getattr(res, "content", "") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    funcs = []
+    for fn in data.get("tools", []):
+        full = fn.get("name", "")
+        funcs.append({
+            "name": full.split(".")[-1] if full else full,
+            "full": full,
+            "description": (fn.get("description") or "").strip(),
+        })
+    return funcs
 
 
 def module_level_tick_qt(delta_time):
@@ -185,6 +315,112 @@ class PyBridge(QObject):
     def save_tabs(self, data_json):
         self._window.save_tabs(data_json)
 
+    # ---- unreal mcp settings ----
+    @Slot()
+    def get_unreal_mcp_settings(self):
+        url_path = "/mcp"
+        port = 8000
+        try:
+            import unreal
+            if hasattr(unreal, "ModelContextProtocolSettings"):
+                settings = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+                for prop in dir(settings):
+                    if "port" in prop.lower():
+                        port = settings.get_editor_property(prop)
+                    elif "path" in prop.lower() or "url" in prop.lower():
+                        url_path = settings.get_editor_property(prop)
+                
+                if _global_custom_mcp_port is not None:
+                    port = _global_custom_mcp_port
+                
+                # Epic Bug Workaround for UI labels
+                elif port == 8000:
+                    try:
+                        import os
+                        proj_dir = unreal.SystemLibrary.get_project_directory()
+                        ini_path = os.path.join(proj_dir, "Saved", "Config", "WindowsEditor", "EditorPerProjectUserSettings.ini")
+                        if os.path.exists(ini_path):
+                            with open(ini_path, "rb") as f:
+                                content_bytes = f.read()
+                            # Robustly handle both UTF-8 and UTF-16 by ignoring errors and stripping null bytes
+                            content = content_bytes.decode("utf-8", errors="ignore").replace("\x00", "")
+                            
+                            in_mcp_section = False
+                            for line in content.splitlines():
+                                line = line.strip()
+                                if line.startswith("[/Script/ModelContextProtocolEngine.ModelContextProtocolSettings]"):
+                                    in_mcp_section = True
+                                elif in_mcp_section and line.startswith("["):
+                                    break
+                                elif in_mcp_section and line.startswith("ServerPortNumber="):
+                                    port = int(line.split("=")[1].strip())
+                                elif in_mcp_section and line.startswith("ServerUrlPath="):
+                                    url_path = line.split("=")[1].strip()
+                    except Exception as ini_err:
+                        pass
+        except Exception:
+            pass # Ignore if the class isn't exposed to Python
+            
+        payload = {
+            "type": "mcp_settings",
+            "installed": True,
+            "url_path": url_path,
+            "port": port
+        }
+        _pending_events.append(payload)
+
+    @Slot(int)
+    def start_epic_mcp(self, port):
+        global _global_custom_mcp_port
+        _global_custom_mcp_port = port
+        try:
+            import unreal
+            if hasattr(unreal, "ModelContextProtocolSettings"):
+                s = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+                for prop in dir(s):
+                    if "port" in prop.lower():
+                        s.set_editor_property(prop, port)
+                        break
+            unreal.SystemLibrary.execute_console_command(None, f"ModelContextProtocol.StartServer {port}")
+        except Exception as e:
+            unreal.log_error(f"[VERA] Failed to start MCP server: {e}")
+
+    # ---- unreal mcp toolsets (the nested layer behind list_toolsets) ----
+    # These do blocking network I/O, so the work runs on a daemon thread and the
+    # result is delivered via _pending_events (drained by the Qt tick). The slot
+    # itself returns instantly — otherwise the editor's game thread would freeze.
+    # The MCP url is resolved here (game thread) and handed to the worker, which
+    # must never touch the `unreal` API.
+    @Slot()
+    def get_unreal_mcp_toolsets(self):
+        url = _read_mcp_url()
+
+        def _work():
+            try:
+                toolsets = fetch_mcp_toolsets(url)
+            except Exception:
+                toolsets = []
+            _pending_events.append({"type": "mcp_toolsets", "toolsets": toolsets})
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    @Slot(str)
+    def describe_mcp_toolset(self, toolset_name):
+        url = _read_mcp_url()
+
+        def _work():
+            try:
+                funcs = _describe_mcp_toolset(toolset_name, url)
+            except Exception:
+                funcs = []
+            _pending_events.append({
+                "type": "mcp_toolset_detail",
+                "toolset": toolset_name,
+                "tools": funcs,
+            })
+
+        threading.Thread(target=_work, daemon=True).start()
+
     # ---- stop / cancel the running command ----
     @Slot()
     def stop(self):
@@ -246,6 +482,10 @@ class VeraWebPage(QWebEnginePage if HAS_WEBENGINE else object):
             unreal.log_warning(f"[VERA UI] could not open external link: {e}")
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
+    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        unreal.log_warning(f"[JS Console] {message} (line {lineNumber} in {sourceID})")
+
+
 
 # ---------- WebEngine window ----------
 class VeraWebWindow(QWidget):
@@ -265,11 +505,33 @@ class VeraWebWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.view = QWebEngineView()
         self.web_page = VeraWebPage(self.view)
+        
+        # CLEAR CACHE to prevent gray screen corruption
+        self.web_page.profile().clearHttpCache()
+        
         self.view.setPage(self.web_page)
+        
+        # Enable local file access explicitly (required in newer PySide6 versions)
+        settings = self.view.settings()
+        settings.setAttribute(settings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(settings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        
         self.channel = QWebChannel()
         self.pybridge = PyBridge(self)
         self.channel.registerObject("pybridge", self.pybridge)
         self.web_page.setWebChannel(self.channel)
+        # QtWebEngine caches even file:// responses in a global on-disk cache
+        # (AppData/.../UnrealEngine/.../webcache_*). That cache survives plugin
+        # updates, so a stale index.html/CSS/JS renders an ancient UI even when
+        # the files on disk are current. This is a local dev UI — disable the
+        # HTTP cache and flush any existing entries so we always load from disk.
+        try:
+            from PySide6.QtWebEngineCore import QWebEngineProfile
+            _profile = self.web_page.profile()
+            _profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)
+            _profile.clearHttpCache()
+        except Exception:
+            pass
         self.web_page.load(QUrl.fromLocalFile(os.path.join(CHAT_DIR, "index.html")))
         layout.addWidget(self.view)
         self.setLayout(layout)
@@ -896,7 +1158,11 @@ def open_vera_ui():
         if HAS_WEBENGINE:
             global_vera_window = VeraWebWindow()
         else:
-            unreal.log_warning("[VERA] QtWebEngine unavailable — using the basic UI.")
+            why = f" Reason: {_WEBENGINE_IMPORT_ERROR}" if _WEBENGINE_IMPORT_ERROR else ""
+            unreal.log_warning(
+                "[VERA] QtWebEngine unavailable — using the basic UI (no tabs)." + why
+                + " This usually means the bundled PySide6 version mismatches the"
+                + " editor's Qt runtime. Try PySide6 6.11.x for UE 5.8.")
             global_vera_window = VeraChatWindow()  # bubble fallback
         try:
             unreal.parent_external_window_to_slate(global_vera_window.winId())

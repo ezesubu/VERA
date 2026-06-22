@@ -6,6 +6,7 @@ pytesseract>=0.3.10
 
 # LLM
 google-generativeai>=0.8.0
+mcp>=1.0.0
 
 # Semantic Cache
 sentence-transformers>=3.0.0
