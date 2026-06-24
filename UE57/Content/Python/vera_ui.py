@@ -61,16 +61,25 @@ except ImportError:
 import vera_history
 
 CHAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vera_chat")
-# __file__ = UE57/Content/Python/vera_ui.py
-# dirname x1 = UE57/Content/Python
-# dirname x2 = UE57/Content
-# dirname x3 = UE57   ← project root; Saved/ lives here
-HISTORY_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "Saved", "VERA", "chat_history.jsonl")
-TABS_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "Saved", "VERA", "tabs.json")
+try:
+    import unreal
+    # Robust resolution: __file__ can be unreliable in embedded or zipped environments.
+    # We use the Unreal API to get the absolute path to the plugin and project saved dir.
+    _plugin = unreal.PluginManager.get().find_plugin("VERA")
+    if _plugin:
+        CHAT_DIR = os.path.join(_plugin.get_base_dir(), "Content", "Python", "vera_chat")
+    
+    _saved_dir = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())
+    HISTORY_PATH = os.path.join(_saved_dir, "VERA", "chat_history.jsonl")
+    TABS_PATH = os.path.join(_saved_dir, "VERA", "tabs.json")
+except Exception:
+    # Fallback if unreal API fails
+    HISTORY_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Saved", "VERA", "chat_history.jsonl")
+    TABS_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "Saved", "VERA", "tabs.json")
 BACKEND = ("127.0.0.1", 9880)
 STREAM_FINAL_TIMEOUT = 300.0
 
@@ -93,15 +102,19 @@ def _read_mcp_url():
     url = "http://127.0.0.1:8000/mcp"
     try:
         import unreal
-        if hasattr(unreal, "ModelContextProtocolSettings"):
-            s = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+        cls = unreal.find_object(None, "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")
+        if cls:
+            s = unreal.get_default_object(cls)
             port = 8000
             path = "/mcp"
             for prop in dir(s):
-                if "port" in prop.lower():
-                    port = s.get_editor_property(prop)
-                elif "path" in prop.lower() or "url" in prop.lower():
-                    path = s.get_editor_property(prop)
+                try:
+                    if "port" in prop.lower():
+                        port = s.get_editor_property(prop)
+                    elif "path" in prop.lower() or "url" in prop.lower():
+                        path = s.get_editor_property(prop)
+                except Exception:
+                    pass
             
             if _global_custom_mcp_port is not None:
                 port = _global_custom_mcp_port
@@ -287,6 +300,14 @@ class PyBridge(QObject):
     def save_credentials(self, provider, key):
         self._window.control_op({"op": "save_credentials", "provider": provider, "key": key})
 
+    @Slot()
+    def google_login(self):
+        self._window.control_op({"op": "google_login"})
+
+    @Slot()
+    def check_google_login(self):
+        self._window.control_op({"op": "check_google_login"})
+
     # ---- local server config (URL + LLM request timeout) ----
     @Slot()
     def get_local_config(self):
@@ -320,15 +341,25 @@ class PyBridge(QObject):
     def get_unreal_mcp_settings(self):
         url_path = "/mcp"
         port = 8000
+        has_mcp = False
         try:
             import unreal
-            if hasattr(unreal, "ModelContextProtocolSettings"):
-                settings = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+            
+            # Use dir(unreal) instead of hasattr to check if the class is exposed.
+            # hasattr() forces a LoadObject which throws a yellow warning in the log
+            # if the class doesn't exist (e.g. UE 5.7, or 5.8 with the plugin disabled).
+            cls = unreal.find_object(None, "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")
+            if cls:
+                settings = unreal.get_default_object(cls)
+                has_mcp = True
                 for prop in dir(settings):
-                    if "port" in prop.lower():
-                        port = settings.get_editor_property(prop)
-                    elif "path" in prop.lower() or "url" in prop.lower():
-                        url_path = settings.get_editor_property(prop)
+                    try:
+                        if "port" in prop.lower():
+                            port = settings.get_editor_property(prop)
+                        elif "path" in prop.lower() or "url" in prop.lower():
+                            url_path = settings.get_editor_property(prop)
+                    except Exception:
+                        pass
                 
                 if _global_custom_mcp_port is not None:
                     port = _global_custom_mcp_port
@@ -363,7 +394,7 @@ class PyBridge(QObject):
             
         payload = {
             "type": "mcp_settings",
-            "installed": True,
+            "installed": has_mcp,
             "url_path": url_path,
             "port": port
         }
@@ -375,12 +406,16 @@ class PyBridge(QObject):
         _global_custom_mcp_port = port
         try:
             import unreal
-            if hasattr(unreal, "ModelContextProtocolSettings"):
-                s = unreal.get_default_object(unreal.ModelContextProtocolSettings)
+            cls = unreal.find_object(None, "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")
+            if cls:
+                s = unreal.get_default_object(cls)
                 for prop in dir(s):
-                    if "port" in prop.lower():
-                        s.set_editor_property(prop, port)
-                        break
+                    try:
+                        if "port" in prop.lower():
+                            s.set_editor_property(prop, port)
+                            break
+                    except Exception:
+                        pass
             unreal.SystemLibrary.execute_console_command(None, f"ModelContextProtocol.StartServer {port}")
         except Exception as e:
             unreal.log_error(f"[VERA] Failed to start MCP server: {e}")
@@ -555,6 +590,7 @@ class VeraWebWindow(QWidget):
             "veraChat.dispatch(" + json.dumps(
                 {"type": "restore_tabs", "tabs": saved.get("tabs", []),
                  "active": saved.get("active")}, ensure_ascii=True) + ")")
+        self.pybridge.get_unreal_mcp_settings()
         threading.Thread(target=self._check_status, daemon=True).start()
 
     # --- backend ---
@@ -652,7 +688,7 @@ class VeraWebWindow(QWidget):
                 while True:
                     chunk = s.recv(4096)
                     if not chunk:
-                        _pending_events.append({"type": "interrupted"})
+                        _pending_events.append({"type": "interrupted", "_tab": session_id})
                         return
                     buf += chunk
                     while b"\n" in buf:
@@ -664,6 +700,7 @@ class VeraWebWindow(QWidget):
                         except ValueError:
                             continue
                         if event.get("type") == "question":
+                            event["_tab"] = session_id
                             # Destructive-gate round-trip: show the question and
                             # wait for the user's decision (buttons in the chat).
                             while not _answer_queue.empty():
@@ -673,32 +710,39 @@ class VeraWebWindow(QWidget):
                                 approve = _answer_queue.get(timeout=CONFIRM_UI_TIMEOUT)
                             except queue.Empty:
                                 approve = False
-                                _pending_events.append({"type": "question_resolved", "approved": False})
+                                _pending_events.append({"type": "question_resolved", "approved": False, "_tab": session_id})
                                 _pending_events.append({
                                     "type": "progress", "agent": "Gate",
-                                    "msg": "no response from the user — action denied"})
+                                    "msg": "no response from the user — action denied", "_tab": session_id})
                             s.sendall((json.dumps({"approve": approve}) + "\n").encode("utf-8"))
                             continue
+                        event["_tab"] = session_id
                         _pending_events.append(event)
                         if event.get("type") == "final":
                             return
         except ConnectionRefusedError:
             _pending_events.append({"type": "error",
                 "msg": "The VERA backend isn't running. "
-                       "Start it with: `python -m vera.core.vera_server`"})
+                       "Start it with: `python -m vera.core.vera_server`", "_tab": session_id})
             _pending_events.append({"type": "status", "online": False})
         except OSError:
-            _pending_events.append({"type": "interrupted"})
+            _pending_events.append({"type": "interrupted", "_tab": session_id})
 
     def _check_status(self):
         import socket
         global _pending_events
         try:
+            import unreal
+            ver = "UE " + unreal.SystemLibrary.get_engine_version().split('-')[0]
+        except Exception:
+            ver = "UE"
+            
+        try:
             with socket.create_connection(BACKEND, timeout=3.0) as s:
                 s.settimeout(5.0)
                 s.sendall((json.dumps({"command": "hello world"}) + "\n").encode("utf-8"))
                 s.recv(4096)
-            _pending_events.append({"type": "status", "online": True, "version": "UE 5.7"})
+            _pending_events.append({"type": "status", "online": True, "version": ver})
         except OSError:
             _pending_events.append({"type": "status", "online": False})
 

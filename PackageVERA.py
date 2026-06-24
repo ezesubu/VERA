@@ -15,6 +15,7 @@ PACKAGED_ROOT = os.path.join(WORKSPACE_DIR, "Packaged")
 # wants another version clones the repo and builds it themselves.
 UE_VERSIONS = {    
     "5.8": r"C:\Program Files\Epic Games\UE_5.8",
+    "5.7": r"C:\Program Files\Epic Games\UE_5.7",
 }
 
 def load_uplugin():

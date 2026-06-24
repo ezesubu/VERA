@@ -317,6 +317,9 @@ window.veraChat = {
         return;
       }
       case "mcp_settings": {
+        const tabBtn = document.querySelector('.s-tab[data-pane="mcp"]');
+        if (tabBtn) tabBtn.style.display = e.installed ? "" : "none";
+        
         const st = $("st-UE-MCP");
         if (!st) return;
         if (!e.installed) {

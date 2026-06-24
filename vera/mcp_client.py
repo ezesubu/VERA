@@ -105,7 +105,8 @@ class EpicMCPClient:
         if probe_settings:
             try:
                 import unreal
-                cls = unreal.load_class(None, "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")
+                
+                cls = unreal.find_object(None, "/Script/ModelContextProtocolEngine.ModelContextProtocolSettings")
                 if not cls:
                     # Plugin not installed (e.g. UE 5.7) or not enabled. Abort cleanly.
                     return False
@@ -114,10 +115,13 @@ class EpicMCPClient:
                 port = 8000
                 url_path = "/mcp"
                 for prop in dir(settings):
-                    if "port" in prop.lower():
-                        port = settings.get_editor_property(prop)
-                    elif "path" in prop.lower() or "url" in prop.lower():
-                        url_path = settings.get_editor_property(prop)
+                    try:
+                        if "port" in prop.lower():
+                            port = settings.get_editor_property(prop)
+                        elif "path" in prop.lower() or "url" in prop.lower():
+                            url_path = settings.get_editor_property(prop)
+                    except Exception:
+                        pass
                 
                 try:
                     import vera_ui
