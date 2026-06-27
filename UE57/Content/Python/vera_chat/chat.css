@@ -36,10 +36,33 @@ body::after{
 }
 
 /* amber top edge across the whole window */
+/* default (offline or no model picked) */
 body::before{
-  content:""; position:fixed; top:0; left:0; right:0; height:2px; z-index:97;
-  background:linear-gradient(90deg, transparent, var(--amber-deep), var(--amber), var(--amber-deep), transparent);
-  opacity:.7;
+  content:""; position:fixed; top:0; left:0; right:0; height:3px; z-index:97;
+  background:var(--ink-faint);
+  opacity:0.4;
+  transition: background 0.3s, opacity 0.3s, box-shadow 0.3s;
+}
+
+/* ready (connected) */
+body.ready::before{
+  background:linear-gradient(90deg, transparent, var(--amber-deep), var(--amber), transparent);
+  opacity:0.9;
+  box-shadow: 0 0 10px rgba(255, 120, 0, 0.4);
+}
+
+@keyframes bar-scan {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* thinking */
+body.thinking::before{
+  background:linear-gradient(90deg, transparent, var(--amber-deep), var(--amber), var(--teal), var(--amber), transparent);
+  background-size: 200% 100%;
+  animation: bar-scan 2s linear infinite;
+  opacity:1;
+  box-shadow: 0 0 15px var(--amber-glow);
 }
 
 /* ===== minimal header ===== */
@@ -55,9 +78,29 @@ body::before{
   font-family:var(--mono); font-weight:600; font-size:17px; letter-spacing:5px;
   color:var(--ink); text-shadow:0 0 18px var(--amber-glow);
 }
-#brand .mark b{color:var(--amber); transition:color .3s}
+#brand .mark b{color:var(--amber); font-weight:900; transition:color .3s, text-shadow .3s}
 /* the R follows the logo: gray when disconnected, amber when ready */
 #status.off ~ .mark b{color:var(--ink-faint)}
+#status.thinking ~ .mark b{
+  background:linear-gradient(90deg, var(--amber-deep), var(--amber), var(--teal), var(--amber));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: bar-scan 2s linear infinite;
+  text-shadow: none;
+}
+#status.executing ~ .mark b{
+  background:linear-gradient(90deg, var(--teal-dim), var(--teal), var(--teal));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: bar-scan 2s linear infinite;
+  text-shadow: none;
+}
 #brand .sub{font-family:var(--mono); font-size:9px; letter-spacing:2px; color:var(--ink-faint); text-transform:uppercase}
 
 /* V logo (Unreal emblem with a V) = brand + connection status.
@@ -65,8 +108,26 @@ body::before{
 #status{display:inline-flex; align-items:center; color:var(--amber)}
 #status.off{color:var(--ink-faint)}
 .vlogo{width:20px;height:20px;display:block}
-#status .vlogo{width:40px;height:40px;filter:drop-shadow(0 0 6px currentColor); transition:color .3s, filter .3s}
+#status .vlogo{width:40px;height:40px;filter:drop-shadow(0 0 6px currentColor); transition:color .3s, filter .3s, transform .3s}
 #status.off .vlogo{filter:none}
+
+@keyframes vlogo-pulse {
+  0% { filter: drop-shadow(0 0 8px var(--amber)); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 16px var(--amber)) brightness(1.2); transform: scale(1.05); }
+  100% { filter: drop-shadow(0 0 8px var(--amber)); transform: scale(1); }
+}
+
+#status.thinking .vlogo {
+  animation: vlogo-pulse 1.2s ease-in-out infinite;
+  /* Mantenemos el color original sólido, no usamos amber-glow que lo hace transparente */
+  color: var(--amber);
+}
+
+#status.executing .vlogo {
+  animation: vlogo-pulse 1.2s ease-in-out infinite;
+  color: var(--teal);
+}
+
 
 /* ===== tab bar ===== */
 #tabbar{display:flex; align-items:center; gap:4px; padding:6px 10px 0;
@@ -256,6 +317,7 @@ body::before{
 
 /* user-attached image inside the bubble */
 .user-img{display:block;max-width:200px;border-radius:8px;margin-bottom:6px;border:1px solid #2c313a}
+
 
 /* copy button on code blocks */
 .md pre{position:relative}

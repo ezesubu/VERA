@@ -55,7 +55,9 @@ function md(text) {
 }
 
 function copyText(txt) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
+  if (typeof pybridge !== "undefined" && pybridge !== null && pybridge.copy_to_clipboard) {
+    pybridge.copy_to_clipboard(txt);
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(txt).catch(() => fallbackCopy(txt));
   } else { fallbackCopy(txt); }
 }
@@ -130,12 +132,24 @@ function closeTimeline() { stopSpin(); currentTimeline = null; }
 
 // ---------- thinking indicator — the VERA V logo, pulsing (CSS-animated) ----------
 const VLOGO = '<svg class="vlogo" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="3" opacity="0.5"/><path d="M28 28 L43 28 L50 54 L57 28 L72 28 L50 80 Z" fill="currentColor"/></svg>';
+function setStatusGlow(state) {
+  const st = $("status");
+  if (st) {
+    st.classList.remove("thinking", "executing");
+    if (state) st.classList.add(state);
+  }
+  document.body.classList.remove("thinking", "executing");
+  if (state) document.body.classList.add(state);
+}
+
 function startSpin() {
   const tl = ensureTimeline();
   if (tl.querySelector(".spin")) return;
   const item = document.createElement("div");
   item.className = "tl-item spin";
   const ic = document.createElement("span");
+  setStatusGlow("thinking");
+
   ic.innerHTML = VLOGO;
   if (ic.firstChild) item.appendChild(ic.firstChild);
   const label = (STATE && STATE.model) || (STATE && MODELS[STATE.provider] && MODELS[STATE.provider].label) || "VERA";
@@ -262,6 +276,7 @@ window.veraChat = {
         return;
       }
       case "models": {
+        __online = true;
         const prov = String(e.provider || "").toUpperCase();
         if (MODELS[prov]) { MODELS[prov].models = e.models || []; if (e.status) MODELS[prov].status = e.status; }
         if (prov === "LOCAL") renderDetected(e.models || [], e.status);
@@ -271,6 +286,7 @@ window.veraChat = {
         return;
       }
       case "conn": {
+        __online = true;
         const prov = String(e.provider || "").toUpperCase();
         if (MODELS[prov]) MODELS[prov].status = e.ok ? "ok" : "off";
         applyProviderStatus(prov, e.ok ? "ok" : "off", e.detail);
@@ -278,6 +294,7 @@ window.veraChat = {
         return;
       }
       case "providers": {
+        __online = true;
         (e.providers || []).forEach((p) => {
           const id = String(p.id || "").toUpperCase();
           if (!MODELS[id]) MODELS[id] = { label: p.label || id, status: "off", models: [] };
@@ -392,6 +409,7 @@ function renderEvent(e) {
       break;
     }
     case "progress": {
+      setStatusGlow("thinking");
       stopSpin();
       const tl = ensureTimeline();
       tl.querySelectorAll(".tl-item.working").forEach((el) => { el.classList.remove("working"); el.classList.add("done"); });
@@ -404,6 +422,7 @@ function renderEvent(e) {
       break;
     }
     case "say": {  // the model's narration ("I'll do X…") alongside its tool calls
+      setStatusGlow("thinking");
       stopSpin();
       const tl = ensureTimeline();
       const item = document.createElement("div");
@@ -413,6 +432,7 @@ function renderEvent(e) {
       break;
     }
     case "tool_use": {  // VERA is calling a tool — show its name + args
+      setStatusGlow("executing");
       stopSpin();
       const tl = ensureTimeline();
       const item = document.createElement("div");
@@ -440,6 +460,7 @@ function renderEvent(e) {
       break;
     }
     case "final": {
+      setStatusGlow(null);
       stopSpin();
       const tl = ensureTimeline();
       tl.querySelectorAll(".tl-item.working").forEach((el) => { el.classList.remove("working"); el.classList.add("done"); });
@@ -450,6 +471,7 @@ function renderEvent(e) {
       break;
     }
     case "thinking": {
+      setStatusGlow("thinking");
       stopSpin();
       const tl = ensureTimeline();
       let th = tl.querySelector(".tl-think.live");
@@ -458,6 +480,7 @@ function renderEvent(e) {
       break;
     }
     case "question": {
+      setStatusGlow("executing");
       stopSpin();
       const tl = ensureTimeline();
       const q = document.createElement("div");
@@ -505,6 +528,7 @@ function renderEvent(e) {
       break;
     }
     case "interrupted": {
+      setStatusGlow(null);
       stopSpin();
       const tl = ensureTimeline();
       tl.querySelectorAll(".tl-item.working").forEach((el) => { el.classList.remove("working"); el.classList.add("interrupted"); });
@@ -697,6 +721,7 @@ function restoreTabs(e) {
 const MODELS = {
   LOCAL:     { label: "LM Studio · Local", status: "off", models: [] },
   ANTHROPIC: { label: "Anthropic", status: "off", models: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"] },
+  NVIDIA:    { label: "NVIDIA", status: "off", models: [] },
   OPENAI:    { label: "OpenAI", status: "off", models: ["gpt-4o", "gpt-4o-mini", "o3-mini"] },
   GEMINI:    { label: "Gemini", status: "off", models: ["gemini-2.0-flash", "gemini-1.5-pro"] },
 };
@@ -717,9 +742,12 @@ function refreshBrand() {
   const info = (STATE && MODELS[STATE.provider]) || { status: "off" };
   const modelReady = !!(STATE && STATE.model) && ["ok", "online", "local"].includes(info.status);
   const ready = __online && modelReady;
-  st.className = ready ? "" : "off";
+  st.classList.toggle("off", !ready);
   st.title = ready ? ("ready · " + (__version || "UE"))
                    : (__online ? "connected — pick a model" : "offline");
+  
+  if (ready) document.body.classList.add("ready");
+  else document.body.classList.remove("ready");
 }
 
 function autoSelectModel(prov) {
@@ -747,9 +775,9 @@ function renderModels(filter = "") {
     const live = info.status === "local" || info.status === "online";
     const dotCls = live ? "local" : info.status === "ok" ? "on" : "off";
     const lab = document.createElement("span"); lab.textContent = info.label; grp.appendChild(lab);
-    if (prov === "LOCAL") {
+    if (prov === "LOCAL" || prov === "NVIDIA") {
       const re = document.createElement("span"); re.className = "rescan"; re.textContent = "↻ rescan";
-      re.onclick = (ev) => { ev.stopPropagation(); re.textContent = "scanning…"; requestModels("LOCAL"); setTimeout(() => { re.textContent = "↻ rescan"; }, 1200); };
+      re.onclick = (ev) => { ev.stopPropagation(); re.textContent = "scanning…"; requestModels(prov); setTimeout(() => { re.textContent = "↻ rescan"; }, 1200); };
       grp.appendChild(re);
     } else if (info.status === "off") {
       const nk = document.createElement("span"); nk.style.color = "var(--ink-faint)"; nk.textContent = "no key"; grp.appendChild(nk);
@@ -1033,7 +1061,11 @@ function wireControls() {
   $$(".test").forEach((b) => b.onclick = () => {
     const p = b.dataset.p; b.textContent = "…";
     const key = $("k-" + p).value.trim();
-    if (pybridge) { if (key) pybridge.save_credentials(p, key); else pybridge.test_connection(p); }
+    if (pybridge) { 
+      if (key) pybridge.save_credentials(p, key); 
+      else pybridge.test_connection(p);
+      pybridge.list_models(p);
+    }
     else setTimeout(() => window.veraChat.dispatch({ type: "conn", provider: p, ok: true, detail: "mock" }), 700);
   });
 

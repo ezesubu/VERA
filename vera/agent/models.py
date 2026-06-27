@@ -54,6 +54,15 @@ PROVIDERS = {
         "discover": False,
         "models": ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
     },
+    "NVIDIA": {
+        "label": "NVIDIA · NIM",
+        "env": "NVIDIA_API_KEY",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "native": False,
+        "needs_key": True,
+        "discover": True,
+        "models": [],
+    },
     "LOCAL": {
         "label": "LM Studio · Local",
         "env": None,
@@ -75,9 +84,10 @@ def base_url_for(provider: str) -> Optional[str]:
     return spec.get("base_url")
 
 
-def _default_http(url: str, timeout: float = 4.0) -> dict:
+def _default_http(url: str, timeout: float = 4.0, headers: Optional[dict] = None) -> dict:
     """GET JSON. Injectable/mockable via the `http` parameter of list_models."""
-    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (controlled local url)
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (controlled local url)
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -108,9 +118,18 @@ def list_models(provider: str, *, http: Optional[Callable] = None) -> dict:
             return {"provider": provider, "models": [], "status": "not_configured"}
         http = http or _default_http
         url = base.rstrip("/") + "/models"
+        
+        headers = {}
+        if spec.get("needs_key"):
+            env_var = spec.get("env")
+            api_key = os.environ.get(env_var) if env_var else None
+            if not api_key:
+                return {"provider": provider, "models": [], "status": "missing_key"}
+            headers["Authorization"] = f"Bearer {api_key}"
+
         try:
-            data = http(url)
-        except Exception:  # local server down/unreachable
+            data = http(url, headers=headers)
+        except Exception:  # local server down/unreachable/auth failed
             return {"provider": provider, "models": [], "status": "offline"}
         ids = [m.get("id") for m in (data or {}).get("data", []) if m.get("id")]
         return {"provider": provider, "models": ids, "status": "online"}
@@ -143,7 +162,7 @@ def list_providers() -> List[dict]:
 # Order VERA prefers when the caller doesn't pick a provider: a configured cloud
 # provider first, then a local server. Lets a fresh install "just work" with
 # whatever the user actually set up, instead of always assuming Anthropic.
-_PROVIDER_PREFERENCE = ("ANTHROPIC", "OPENAI", "GEMINI", "LOCAL")
+_PROVIDER_PREFERENCE = ("ANTHROPIC", "NVIDIA", "OPENAI", "GEMINI", "LOCAL")
 
 
 def default_provider() -> str:

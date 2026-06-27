@@ -44,7 +44,7 @@ class VeraServer:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._stop = threading.Event()
-        self._busy = threading.Lock()
+        self._session_locks = {}
         # Set by the {"op":"cancel"} control op; the running AgentLoop checks it
         # between iterations and stops cleanly. Control ops don't take _busy, so
         # a cancel can arrive while a command is streaming.
@@ -148,7 +148,8 @@ class VeraServer:
                       "msg": "Hello World! The VERA-Unreal communication bridge is online."})
                 return
 
-            if not self._busy.acquire(blocking=False):
+            session_busy = self._session_locks.setdefault(session_id, threading.Lock())
+            if not session_busy.acquire(blocking=False):
                 emit({"type": "final", "status": "error",
                       "msg": "VERA is busy with another command. Wait for it to finish."})
                 return
@@ -173,8 +174,9 @@ class VeraServer:
                 emit({"type": "final", "status": "error",
                       "msg": f"Error processing the command: {llm_error}"})
             finally:
-                self.blackboard.progress_callback = None
-                self._busy.release()
+                if getattr(self.blackboard, "progress_callback", None) == emit:
+                    self.blackboard.progress_callback = None
+                session_busy.release()
         except Exception as e:
             logger.error(f"[VeraServer] Error handling client: {e}")
         finally:

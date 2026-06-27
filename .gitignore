@@ -77,6 +77,8 @@ img.png
 # Loose root experiments
 test_vera_direct.py
 start_vera_autopilot.py
+fetch_jane.cmd
+jane_knowledge.md
 
 # Legacy 'Crew' subsystem — kept locally for reference, excluded from the public repo
 legacy/

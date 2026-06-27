@@ -255,6 +255,18 @@ class PyBridge(QObject):
     def js_ready(self):
         self._window.on_js_ready()
 
+    @Slot(str)
+    def copy_to_clipboard(self, text):
+        """Copy text to system clipboard (bypasses Unreal's WebBrowser blocked clipboard API)."""
+        try:
+            from PySide6.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText(text)
+        except Exception as e:
+            import unreal
+            unreal.log_warning(f"[VERA UI] Failed to copy to clipboard: {e}")
+
     @Slot(str, str, str, str, str, str)
     def send_command(self, text, provider="", model="", mode="", session_id="", image_json=""):
         """User command. provider/model/mode/session_id come from the active tab.
